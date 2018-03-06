@@ -61,17 +61,14 @@ jx-import: *.go
 	$(GO) test $(PACKAGE_DIRS) -test.v -godog.feature=import.feature
 
 jx-import-url: *.go
-	$(GO) test $(PACKAGE_DIRS) -test.v -godog.feature=importurl.feature
+	$(GO) test -test.v -godog.feature=importurl.feature
 
 
 create-gitea:
 	echo "Installing gitea addon with user $(GITEA_USER) email: $(GITEA_EMAIL)"
 	jx create addon gitea -b --headless --username $(GITEA_USER) --password $(GITEA_PASSWORD) --email $(GITEA_EMAIL)
 
-bdd-cluster: create-gitea jx-all
-
-bdd-github: jx/importurl/*.go
-	cd jx/importurl && godog
+bdd-cluster: create-gitea jx-import jx-spring
 
 fmt:
 	@FORMATTED=`$(GO) fmt $(PACKAGE_DIRS)`
