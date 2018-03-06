@@ -1,0 +1,39 @@
+package: github.com/jenkins-x/jx
+import:
+- package: k8s.io/client-go
+  version: kubernetes-1.10.0-alpha.2
+- package: k8s.io/apimachinery
+- package: k8s.io/api
+- package: k8s.io/code-generator
+- package: k8s.io/gengo
+- package: k8s.io/metrics
+- package: k8s.io/helm
+- package: github.com/pborman/uuid
+- package: github.com/jenkins-x/golang-jenkins
+- package: github.com/google/go-github
+- package: golang.org/x/oauth2
+- package: github.com/google/go-querystring
+- package: github.com/spf13/cobra
+- package: github.com/golang/glog
+- package: github.com/pkg/browser
+- package: github.com/MakeNowJust/heredoc
+- package: github.com/blang/semver
+- package: gopkg.in/AlecAivazis/survey.v1
+- package: github.com/fatih/color
+  version: v1.5.0
+- package: github.com/spf13/pflag
+  version: 4c012f6dcd9546820e378d0bdda4d8fc772cdfea
+- package: gopkg.in/src-d/go-git.v4
+  version: v4.1.1
+- package: code.gitea.io/sdk/gitea
+- package: github.com/Pallinder/go-randomdata
+- package: github.com/chromedp/chromedp
+- package: github.com/cpuguy83/go-md2man
+  version: v1.0.4
+- package: github.com/russross/blackfriday
+  version: v1.5
+- package: github.com/jenkins-x/chyle
+testImport:
+- package: github.com/stretchr/testify
+  subpackages:
+  - assert
