@@ -1,7 +1,6 @@
 package: github.com/jenkins-x/godog-jx
 import:
 - package: github.com/DATA-DOG/godog
-- package: github.com/jenkins-x/golang-jenkins
 - package: github.com/cucumber/gherkin-go
   version: ^4.0.0
 - package: github.com/google/go-github
@@ -18,3 +17,4 @@ import:
 - package: github.com/imdario/mergo
   version: 0.2.4
 - package: github.com/jenkins-x/jx
+
