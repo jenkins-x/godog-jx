@@ -1,5 +1,5 @@
 hash: beea4415cf3c8d06f89965b6579a4461746a73f7e6098d710c8076cf9ebc71e5
-updated: 2018-03-06T07:04:41.400918Z
+updated: 2018-03-06T09:07:19.446238Z
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -267,7 +267,7 @@ imports:
   - storage/v1alpha1
   - storage/v1beta1
 - name: k8s.io/apiextensions-apiserver
-  version: de6ba29d18c1b942cfe218338c8a5c6bc6c9817d
+  version: 26684740acb1ce41d0faa4603f5d7224aa1085cf
   subpackages:
   - pkg/apis/apiextensions
   - pkg/apis/apiextensions/v1beta1

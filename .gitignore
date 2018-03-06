@@ -64,14 +64,7 @@ _testmain.go
 bin/
 
 # Generated assets
-app/
-assets/js/
 bindata_assetfs.go
-client/
-swagger/
-tool/cli/
-migration/sqlbindata.go
-migration/sqlbindata_test.go
 
 # Ignore artifacts directory
 bin/
