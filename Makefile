@@ -38,6 +38,11 @@ GITEA_USER ?= testuser
 GITEA_PASSWORD ?= testuser
 GITEA_EMAIL ?= testuser@acme.com
 
+GIT_PROVIDER_URL ?= https://github.beescloud.com
+GHE_USER ?= dev1
+GHE_TOKEN ?= changeme
+GHE_EMAIL ?= testuser@acme.com
+
 all: test
 
 check: fmt test
@@ -64,11 +69,16 @@ jx-import-url: *.go
 	$(GO) test -test.v -godog.feature=importurl.feature
 
 
-create-gitea:
+configure-gitea:
 	echo "Installing gitea addon with user $(GITEA_USER) email: $(GITEA_EMAIL)"
 	jx create addon gitea -b --headless --username $(GITEA_USER) --password $(GITEA_PASSWORD) --email $(GITEA_EMAIL)
 
-bdd-cluster: create-gitea jx-import jx-spring
+configure-ghe:
+	echo "Setting up GitHub Enterprise support for user $(GHE_USER) email: $(GITEA_EMAIL)"
+	jx create git server github $(GIT_PROVIDER_URL) -n GHE
+    jx create git token -n GHE $(GHE_USER) -t $(GHE_TOKEN)
+
+bdd-tests: jx-import jx-spring
 
 fmt:
 	@FORMATTED=`$(GO) fmt $(PACKAGE_DIRS)`
