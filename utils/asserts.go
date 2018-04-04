@@ -3,7 +3,6 @@ package utils
 import (
 	"fmt"
 	"strings"
-
 )
 
 // ErrorSlice stores all of the failures

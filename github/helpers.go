@@ -81,9 +81,9 @@ func ForkRepositoryOrRevertMasterInFork(client *github.Client, userRepo *UserRep
 
 	// TODO how to ignore just 404 errors?
 	/*
-	if err != nil {
-		return nil, fmt.Errorf("Error checking if the fork already exists for %s/%s due to %#v", newOwner, repoName, err)
-	}
+		if err != nil {
+			return nil, fmt.Errorf("Error checking if the fork already exists for %s/%s due to %#v", newOwner, repoName, err)
+		}
 	*/
 
 	if forkRepo == nil || err != nil {

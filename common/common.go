@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	
+
 	"github.com/jenkins-x/godog-jx/jenkins"
 	"github.com/jenkins-x/godog-jx/utils"
 	"github.com/jenkins-x/golang-jenkins"
-	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 	"github.com/jenkins-x/jx/pkg/gits"
+	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 )
-
 
 type CommonTest struct {
 	Factory       cmdutil.Factory
@@ -19,7 +18,7 @@ type CommonTest struct {
 	Interactive   bool
 	Errors        *utils.ErrorSlice
 	WorkDir       string
-	AppName		  string
+	AppName       string
 }
 
 // TheApplicationShouldBeBuiltAndPromotedViaCICD asserts that the project
@@ -32,11 +31,11 @@ func (o *CommonTest) TheApplicationShouldBeBuiltAndPromotedViaCICD() error {
 	f := o.Factory
 	gitURL, err := o.GitProviderURL()
 	if err != nil {
-	  return err
+		return err
 	}
 	gitAuthSvc, err := f.CreateGitAuthConfigService()
 	if err != nil {
-	  return err
+		return err
 	}
 	gitConfig := gitAuthSvc.Config()
 	server := gitConfig.GetServer(gitURL)
@@ -57,7 +56,7 @@ func (o *CommonTest) TheApplicationShouldBeBuiltAndPromotedViaCICD() error {
 	if o.JenkinsClient == nil {
 		client, err := f.CreateJenkinsClient()
 		if err != nil {
-		  return err
+			return err
 		}
 		o.JenkinsClient = client
 	}
@@ -70,14 +69,14 @@ func (o *CommonTest) TheApplicationShouldBeBuiltAndPromotedViaCICD() error {
 func (o *CommonTest) TheGitInfoShouldHaveAJobAndShouldBeBuiltAndPromotedViaCICD() error {
 	url, err := gits.DiscoverRemoteGitURL(filepath.Join(o.WorkDir, ".git/config"))
 	if err != nil {
-	  return err
+		return err
 	}
 	if url == "" {
 		return fmt.Errorf("Could not discover the remote git URL")
 	}
 	gitInfo, err := gits.ParseGitURL(url)
 	if err != nil {
-	  return err
+		return err
 	}
 
 	owner := gitInfo.Organisation
@@ -88,11 +87,11 @@ func (o *CommonTest) TheGitInfoShouldHaveAJobAndShouldBeBuiltAndPromotedViaCICD(
 	if repo == "" {
 		return fmt.Errorf("Could not find repo name from GitInfo %#v from URL %s", gitInfo, url)
 	}
-	jobName := owner +"/" + repo + "/master"
+	jobName := owner + "/" + repo + "/master"
 	if o.JenkinsClient == nil {
 		client, err := o.Factory.CreateJenkinsClient()
 		if err != nil {
-		  return err
+			return err
 		}
 		o.JenkinsClient = client
 	}

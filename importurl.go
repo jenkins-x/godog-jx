@@ -2,24 +2,24 @@ package godog_jx
 
 import (
 	"fmt"
-	"os"
-	"strings"
 	"io/ioutil"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/DATA-DOG/godog"
-	"github.com/jenkins-x/godog-jx/utils"
-	"github.com/jenkins-x/jx/pkg/util"
-	"github.com/stretchr/testify/assert"
 	"github.com/jenkins-x/godog-jx/common"
+	"github.com/jenkins-x/godog-jx/utils"
 	"github.com/jenkins-x/jx/pkg/gits"
 	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
+	"github.com/jenkins-x/jx/pkg/util"
+	"github.com/stretchr/testify/assert"
 )
 
 type importurlTest struct {
 	common.CommonTest
 
-	Args           []string
+	Args []string
 }
 
 func (o *importurlTest) aTemporaryWorkingDirectory() error {
@@ -40,7 +40,7 @@ func (o *importurlTest) runningJxImportUrlWithInADirectory(url string) error {
 	assert.NotEmpty(o.Errors, url, "no URL provided!")
 	gitInfo, err := gits.ParseGitURL(url)
 	if err != nil {
-	  return fmt.Errorf("Failed to parse git URL %s: %s", url, err)
+		return fmt.Errorf("Failed to parse git URL %s: %s", url, err)
 	}
 
 	// lets try find if there's a Jenkins project for the current repo
@@ -52,11 +52,11 @@ func (o *importurlTest) runningJxImportUrlWithInADirectory(url string) error {
 	if repo == "" {
 		return fmt.Errorf("Could not find repo name from GitInfo %#v from URL %s", gitInfo, url)
 	}
-	jobName := owner +"/" + repo
+	jobName := owner + "/" + repo
 	if o.JenkinsClient == nil {
 		client, err := o.Factory.CreateJenkinsClient()
 		if err != nil {
-		  return err
+			return err
 		}
 		o.JenkinsClient = client
 	}
@@ -97,7 +97,7 @@ func (o *importurlTest) thereShouldBeAJenkinsProjectCreate() error {
 	// lets update the work directory to the newly cloned repo
 	files, err := ioutil.ReadDir(o.WorkDir)
 	if err != nil {
-	  return fmt.Errorf("FAiled to read directory %s: %s", o.WorkDir, err)
+		return fmt.Errorf("FAiled to read directory %s: %s", o.WorkDir, err)
 	}
 	for _, f := range files {
 		if f.IsDir() {

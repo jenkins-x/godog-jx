@@ -7,18 +7,18 @@ import (
 	"strings"
 
 	"github.com/DATA-DOG/godog"
+	"github.com/jenkins-x/godog-jx/common"
 	"github.com/jenkins-x/godog-jx/utils"
+	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 	"github.com/jenkins-x/jx/pkg/util"
 	"github.com/stretchr/testify/assert"
-	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 	"path/filepath"
-	"github.com/jenkins-x/godog-jx/common"
 )
 
 type springTest struct {
 	common.CommonTest
 
-	Args        []string
+	Args []string
 }
 
 const (
@@ -74,7 +74,6 @@ func (o *springTest) thereShouldBeAJenkinsProjectCreate() error {
 	return nil
 }
 
-
 func SpringFeatureContext(s *godog.Suite) {
 	o := &springTest{
 		CommonTest: common.CommonTest{
@@ -82,7 +81,7 @@ func SpringFeatureContext(s *godog.Suite) {
 			Interactive: os.Getenv("JX_INTERACTIVE") == "true",
 			Errors:      utils.CreateErrorSlice(),
 		},
-		Args:        []string{},
+		Args: []string{},
 	}
 	s.Step(`^a work directory$`, o.aWorkDirectory)
 	s.Step(`^running "([^"]*)" in that directory$`, o.runningInThatDirectory)

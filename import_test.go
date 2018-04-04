@@ -8,18 +8,18 @@ import (
 	"strings"
 
 	"github.com/DATA-DOG/godog"
+	"github.com/jenkins-x/godog-jx/common"
 	"github.com/jenkins-x/godog-jx/utils"
+	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 	"github.com/jenkins-x/jx/pkg/util"
 	"github.com/stretchr/testify/assert"
-	"github.com/jenkins-x/godog-jx/common"
-	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 )
 
 type importTest struct {
 	common.CommonTest
 
-	SourceDir     string
-	Args        []string
+	SourceDir string
+	Args      []string
 }
 
 func (o *importTest) aDirectoryContainingASpringBootApplication() error {
@@ -44,7 +44,7 @@ func (o *importTest) aDirectoryContainingASpringBootApplication() error {
 	o.AppName = name
 	err = utils.ReplaceElement(filepath.Join(o.WorkDir, "pom.xml"), "artifactId", name, 1)
 	if err != nil {
-	  return err
+		return err
 	}
 	return o.Errors.Error()
 }
@@ -75,7 +75,6 @@ func (o *importTest) thereShouldBeAJenkinsProjectCreate() error {
 	return nil
 }
 
-
 func ImportFeatureContext(s *godog.Suite) {
 	o := &importTest{
 		CommonTest: common.CommonTest{
@@ -83,8 +82,8 @@ func ImportFeatureContext(s *godog.Suite) {
 			Interactive: os.Getenv("JX_INTERACTIVE") == "true",
 			Errors:      utils.CreateErrorSlice(),
 		},
-		Args:        []string{},
-		SourceDir:   "../../examples/example-spring-boot",
+		Args:      []string{},
+		SourceDir: "../../examples/example-spring-boot",
 	}
 	s.Step(`^a directory containing a Spring Boot application$`, o.aDirectoryContainingASpringBootApplication)
 	s.Step(`^running "([^"]*)" in that directory$`, o.runningInThatDirectory)

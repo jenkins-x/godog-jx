@@ -3,11 +3,11 @@ package godog_jx
 import (
 	"testing"
 
-	"github.com/DATA-DOG/godog"
-	"time"
-	"os"
 	"flag"
 	"fmt"
+	"github.com/DATA-DOG/godog"
+	"os"
+	"time"
 )
 
 var (

@@ -1,8 +1,8 @@
 package utils
 
 import (
-	"io/ioutil"
 	"bytes"
+	"io/ioutil"
 	"strings"
 )
 
