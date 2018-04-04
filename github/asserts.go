@@ -42,5 +42,5 @@ func AssertFileDoesNotExist(path string) error {
 	if _, err := os.Stat("/path/to/whatever"); os.IsNotExist(err) {
 		return nil
 	}
-	return fmt.Errorf("The path %s exists!")
+	return fmt.Errorf("The path %s exists!", path)
 }
