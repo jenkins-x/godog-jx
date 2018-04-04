@@ -57,13 +57,13 @@ test:
 
 
 bdd-all: *.go
-	$(GO) test $(PACKAGE_DIRS) -test.v -godog.feature=.
+	$(GO) test $(PACKAGE_DIRS) -test.run TestMain  -test.v -godog.feature=.
 
 jx-spring: *.go
-	$(GO) test $(PACKAGE_DIRS) -test.v -godog.feature=import.feature
+	$(GO) test -test.v -godog.feature=spring.feature
 
 jx-import: *.go
-	$(GO) test $(PACKAGE_DIRS) -test.v -godog.feature=import.feature
+	$(GO) test -test.v -godog.feature=import.feature
 
 jx-import-url: *.go
 	$(GO) test -test.v -godog.feature=importurl.feature

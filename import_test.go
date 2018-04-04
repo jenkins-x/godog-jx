@@ -83,7 +83,7 @@ func ImportFeatureContext(s *godog.Suite) {
 			Errors:      utils.CreateErrorSlice(),
 		},
 		Args:      []string{},
-		SourceDir: "../../examples/example-spring-boot",
+		SourceDir: "examples/example-spring-boot",
 	}
 	s.Step(`^a directory containing a Spring Boot application$`, o.aDirectoryContainingASpringBootApplication)
 	s.Step(`^running "([^"]*)" in that directory$`, o.runningInThatDirectory)
