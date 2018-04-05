@@ -82,9 +82,21 @@ Then in you IDE you should be able to then set a breakpoint and connect to `2345
 
 e.g. in IntellJ you create a new `Go Remote` execution and then hit `Debug`
 
+### Debugging jx with stdin
+
+If you want to debug using `jx` with `stdin` to test out terminal interaction, you can start `jx` as usual from the command line then:
+
+* find the `pid` of the jx command via something like `ps -elaf | grep jx`
+* start Delve attaching to the pid:
+
+```shell
+
+dlv --listen=:2345 --headless=true --api-version=2 attach SomePID
+```
+
 ### Using a helper script
 
-If you create a bash file called `jxDebug` as the following
+If you create a bash file called `jxDebug` as the following (replacing `SomePid` with the actual `pid`):
 
 ```bash
 #!/bin/sh
@@ -93,16 +105,6 @@ dlv --listen=:2345 --headless=true --api-version=2 exec `which jx` -- $*
 ```
 
 Then you can change your `jx someArgs` CLI to `jxDebug someArgs` then debug it!
-
-## Cleaning Up
-
-To remove the Draft chart and local binaries:
-
-```shell
-$ make clean 
-rm build/*
-```
-
 
 [git]: https://git-scm.com/
 [glide]: https://github.com/Masterminds/glide

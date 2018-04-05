@@ -51,9 +51,18 @@ func createBranchSource(info *gits.GitRepositoryInfo, gitProvider gits.GitProvid
 `
 	}
 	if gitProvider.IsGitHub() {
+		serverXml := ""
+		ghp, ok := gitProvider.(*gits.GitHubProvider)
+		if ok {
+			u := ghp.GetEnterpriseApiURL()
+			if u != "" {
+				serverXml = `		  <apiUri>` + u + `</apiUri>
+`
+			}
+		}
 		return `
 	    <source class="org.jenkinsci.plugins.github_branch_source.GitHubSCMSource" plugin="github-branch-source@2.3.1">
-		  <id>b50ee5d4-cb45-42de-9140-d79330bab9ac</id>` + credXml + `
+		  <id>b50ee5d4-cb45-42de-9140-d79330bab9ac</id>` + credXml + serverXml + `
 		  <repoOwner>` + info.Organisation + `</repoOwner>
 		  <repository>` + info.Name + `</repository>
 		  <traits>
@@ -67,6 +76,31 @@ func createBranchSource(info *gits.GitRepositoryInfo, gitProvider gits.GitProvid
 			  <strategyId>1</strategyId>
 			  <trust class="org.jenkinsci.plugins.github_branch_source.ForkPullRequestDiscoveryTrait$TrustContributors"/>
 			</org.jenkinsci.plugins.github__branch__source.ForkPullRequestDiscoveryTrait>
+			<jenkins.scm.impl.trait.RegexSCMHeadFilterTrait plugin="scm-api@2.2.6">
+			  <regex>` + branches + `</regex>
+			</jenkins.scm.impl.trait.RegexSCMHeadFilterTrait>
+		  </traits>
+		</source>
+`
+	}
+	if gitProvider.IsGitea() {
+		return `
+	    <source class="org.jenkinsci.plugin.gitea.GiteaSCMSource" plugin="gitea@1.0.5">
+          <id>db44ccb9-31c0-4b78-8989-614af3a87b9f</id>` + credXml + `
+          <serverUrl>` + info.HostURLWithoutUser() + `</serverUrl>
+          <repoOwner>` + info.Organisation + `</repoOwner>
+		  <repository>` + info.Name + `</repository>
+          <traits>
+            <org.jenkinsci.plugin.gitea.BranchDiscoveryTrait>
+              <strategyId>1</strategyId>
+            </org.jenkinsci.plugin.gitea.BranchDiscoveryTrait>
+            <org.jenkinsci.plugin.gitea.OriginPullRequestDiscoveryTrait>
+              <strategyId>1</strategyId>
+            </org.jenkinsci.plugin.gitea.OriginPullRequestDiscoveryTrait>
+            <org.jenkinsci.plugin.gitea.ForkPullRequestDiscoveryTrait>
+              <strategyId>1</strategyId>
+              <trust class="org.jenkinsci.plugin.gitea.ForkPullRequestDiscoveryTrait$TrustContributors"/>
+            </org.jenkinsci.plugin.gitea.ForkPullRequestDiscoveryTrait>
 			<jenkins.scm.impl.trait.RegexSCMHeadFilterTrait plugin="scm-api@2.2.6">
 			  <regex>` + branches + `</regex>
 			</jenkins.scm.impl.trait.RegexSCMHeadFilterTrait>

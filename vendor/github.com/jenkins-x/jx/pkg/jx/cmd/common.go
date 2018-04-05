@@ -62,7 +62,7 @@ func (f *ServerFlags) IsEmpty() bool {
 }
 
 func addGitRepoOptionsArguments(cmd *cobra.Command, repositoryOptions *gits.GitRepositoryOptions) {
-	cmd.Flags().StringVarP(&repositoryOptions.ServerURL, "git-provider-url", "", "github.com", "The git server URL to create new git repositories inside")
+	cmd.Flags().StringVarP(&repositoryOptions.ServerURL, "git-provider-url", "", "", "The git server URL to create new git repositories inside")
 	cmd.Flags().StringVarP(&repositoryOptions.Username, "git-username", "", "", "The git username to use for creating new git repositories")
 	cmd.Flags().StringVarP(&repositoryOptions.ApiToken, "git-api-token", "", "", "The git API token to use for creating new git repositories")
 }
@@ -98,6 +98,13 @@ func (o *CommonOptions) runCommand(name string, args ...string) error {
 		o.Printf("Error: Command failed  %s %s\n", name, strings.Join(args, " "))
 	}
 	return err
+}
+
+func (o *CommonOptions) runCommandQuietly(name string, args ...string) error {
+	e := exec.Command(name, args...)
+	e.Stdout = o.Out
+	e.Stderr = o.Err
+	return e.Run()
 }
 
 func (o *CommonOptions) runCommandInteractive(interactive bool, name string, args ...string) error {
@@ -190,7 +197,21 @@ func (o *CommonOptions) GitServerKind(gitInfo *gits.GitRepositoryInfo) (string, 
 		return "", err
 	}
 
-	return kube.GetGitServiceKind(jxClient, devNs, gitInfo.Host)
+	kubeClient, _, err := o.KubeClient()
+	if err != nil {
+		return "", err
+	}
+
+	apisClient, err := o.Factory.CreateApiExtensionsClient()
+	if err != nil {
+		return "", err
+	}
+	err = kube.RegisterGitServiceCRD(apisClient)
+	if err != nil {
+		return "", err
+	}
+
+	return kube.GetGitServiceKind(jxClient, kubeClient, devNs, gitInfo.HostURL())
 }
 
 func (o *CommonOptions) JenkinsClient() (*gojenkins.Jenkins, error) {
@@ -223,7 +244,7 @@ func (o *CommonOptions) gitProviderForURL(gitURL string, message string) (gits.G
 	if err != nil {
 		return nil, err
 	}
-	authConfigSvc, err := o.Factory.CreateGitAuthConfigService()
+	authConfigSvc, err := o.Factory.CreateGitAuthConfigServiceForURL(gitInfo.HostURL())
 	if err != nil {
 		return nil, err
 	}
@@ -236,12 +257,17 @@ func (o *CommonOptions) gitProviderForURL(gitURL string, message string) (gits.G
 
 func (o *ServerFlags) addGitServerFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.ServerName, optionServerName, "n", "", "The name of the git server to add a user")
-	cmd.Flags().StringVarP(&o.ServerName, optionServerURL, "u", "", "The URL of the git server to add a user")
+	cmd.Flags().StringVarP(&o.ServerURL, optionServerURL, "u", "", "The URL of the git server to add a user")
 }
 
 // findGitServer finds the git server from the given flags or returns an error
 func (o *CommonOptions) findGitServer(config *auth.AuthConfig, serverFlags *ServerFlags) (*auth.AuthServer, error) {
 	return o.findServer(config, serverFlags, "git server", "Try creating one via: jx create git server")
+}
+
+// findGitServer finds the issue tracker server from the given flags or returns an error
+func (o *CommonOptions) findIssueTrackerServer(config *auth.AuthConfig, serverFlags *ServerFlags) (*auth.AuthServer, error) {
+	return o.findServer(config, serverFlags, "issue tracker server", "Try creating one via: jx create tracker server")
 }
 
 func (o *CommonOptions) findServer(config *auth.AuthConfig, serverFlags *ServerFlags, kind string, missingServerDescription string) (*auth.AuthServer, error) {
@@ -334,6 +360,71 @@ func (o *CommonOptions) findService(name string) (string, error) {
 	return url, nil
 }
 
+func (o *CommonOptions) findEnvironmentNamespace(envName string) (string, error) {
+	f := o.Factory
+	client, ns, err := f.CreateClient()
+	if err != nil {
+		return "", err
+	}
+	jxClient, _, err := f.CreateJXClient()
+	if err != nil {
+		return "", err
+	}
+
+	devNs, _, err := kube.GetDevNamespace(client, ns)
+	if err != nil {
+		return "", err
+	}
+
+	envMap, envNames, err := kube.GetEnvironments(jxClient, devNs)
+	if err != nil {
+		return "", err
+	}
+	env := envMap[envName]
+	if env == nil {
+		return "", util.InvalidOption(optionEnvironment, envName, envNames)
+	}
+	answer := env.Spec.Namespace
+	if answer == "" {
+		return "", fmt.Errorf("Environment %s does not have a Namespace!", envName)
+	}
+	return answer, nil
+}
+
+func (o *CommonOptions) findServiceInNamespace(name string, ns string) (string, error) {
+	f := o.Factory
+	client, curNs, err := f.CreateClient()
+	if err != nil {
+		return "", err
+	}
+	if ns == "" {
+		ns = curNs
+	}
+	url, err := kube.FindServiceURL(client, ns, name)
+	if url == "" {
+		names, err := kube.GetServiceNames(client, ns, name)
+		if err != nil {
+			return "", err
+		}
+		if len(names) > 1 {
+			name, err = util.PickName(names, "Pick service to open: ")
+			if err != nil {
+				return "", err
+			}
+			if name != "" {
+				url, err = kube.FindServiceURL(client, ns, name)
+			}
+		} else if len(names) == 1 {
+			// must have been a filter
+			url, err = kube.FindServiceURL(client, ns, names[0])
+		}
+		if url == "" {
+			return "", fmt.Errorf("Could not find URL for service %s in namespace %s", name, ns)
+		}
+	}
+	return url, nil
+}
+
 func (o *CommonOptions) registerLocalHelmRepo(repoName, ns string) error {
 	if repoName == "" {
 		repoName = kube.LocalHelmRepoName
@@ -399,7 +490,8 @@ func (o *CommonOptions) installChart(releaseName string, chart string, version s
 			return err
 		}
 	}
-	args := []string{"upgrade", "--install"}
+	timeout := fmt.Sprintf("--timeout=%s", defaultInstallTimeout)
+	args := []string{"upgrade", "--install", timeout}
 	if version != "" {
 		args = append(args, "--version", version)
 	}
@@ -433,7 +525,42 @@ func (o *CommonOptions) retry(attempts int, sleep time.Duration, call func() err
 
 		time.Sleep(sleep)
 
-		o.Printf("retrying after error:", err)
+		o.Printf("retrying after error:%s\n", err)
+	}
+	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
+}
+
+func (o *CommonOptions) retryQuiet(attempts int, sleep time.Duration, call func() error) (err error) {
+	lastMessage := ""
+	dot := false
+
+	for i := 0; ; i++ {
+		err = call()
+		if err == nil {
+			if dot {
+				o.Printf("\n")
+			}
+			return
+		}
+
+		if i >= (attempts - 1) {
+			break
+		}
+
+		time.Sleep(sleep)
+
+		message := fmt.Sprintf("retrying after error: %s", err)
+		if lastMessage == message {
+			o.Printf(".")
+			dot = true
+		} else {
+			lastMessage = message
+			if dot {
+				dot = false
+				o.Printf("\n")
+			}
+			o.Printf("%s\n", lastMessage)
+		}
 	}
 	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
 }

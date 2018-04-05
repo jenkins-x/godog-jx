@@ -5,11 +5,14 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/Azure/draft/pkg/draft/draftpath"
+	"github.com/jenkins-x/draft-repo/pkg/draft/pack"
 	"github.com/jenkins-x/golang-jenkins"
+	"github.com/jenkins-x/jx/pkg/auth"
+	jxdraft "github.com/jenkins-x/jx/pkg/draft"
 	"github.com/jenkins-x/jx/pkg/gits"
 	"github.com/jenkins-x/jx/pkg/jenkins"
 	"github.com/jenkins-x/jx/pkg/jx/cmd/log"
@@ -20,9 +23,14 @@ import (
 	"gopkg.in/AlecAivazis/survey.v1"
 	gitcfg "gopkg.in/src-d/go-git.v4/config"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	//_ "github.com/Azure/draft/pkg/linguist"
 )
 
 const (
+	PlaceHolderAppName     = "REPLACE_ME_APP_NAME"
+	PlaceHolderGitProvider = "REPLACE_ME_GIT_PROVIDER"
+	PlaceHolderOrg         = "REPLACE_ME_ORG"
+
 	DefaultWritePermissions = 0760
 
 	defaultGitIgnoreFile = `
@@ -34,120 +42,6 @@ const (
 *.im?
 target
 work
-`
-
-	// TODO figure out how to pass extra dockerfiles from a draft pack
-	defaultDockerfile = `
-FROM openjdk:8-jdk-alpine
-ENV PORT 8080
-EXPOSE 8080
-COPY target/*.jar /opt/app.jar
-WORKDIR /opt
-CMD ["java", "-jar", "app.jar"]
-`
-
-	// TODO replace with the jx-pipelines-plugin version when its available
-	defaultJenkinsfile = `
-pipeline {
-    agent {
-      label "jenkins-maven"
-    }
-
-    environment {
-      ORG 		        = 'jenkinsx'
-      APP_NAME          = '%s'
-      GIT_CREDS         = credentials('jenkins-x-git')
-      CHARTMUSEUM_CREDS = credentials('jenkins-x-chartmuseum')
-
-      GIT_USERNAME      = "$GIT_CREDS_USR"
-      GIT_API_TOKEN     = "$GIT_CREDS_PSW"
-      JOB_NAME          = "$JOB_NAME"
-      BUILD_NUMBER      = "$BUILD_NUMBER"
-    }
-
-    stages {
-      stage('CI Build and push snapshpt') {
-        when {
-          branch 'PR-*'
-        }
-        environment {
-          PREVIEW_VERSION = "0.0.0-SNAPSHOT-$BRANCH_NAME-$BUILD_NUMBER"
-          PREVIEW_NAMESPACE = "$APP_NAME-$BRANCH_NAME".toLowerCase()
-          HELM_RELEASE = "$PREVIEW_NAMESPACE".toLowerCase()
-        }
-        steps {
-          container('maven') {
-            sh "mvn versions:set -DnewVersion=$PREVIEW_VERSION"
-            sh "mvn install"
-            sh "docker build -f Dockerfile.release -t $JENKINS_X_DOCKER_REGISTRY_SERVICE_HOST:$JENKINS_X_DOCKER_REGISTRY_SERVICE_PORT/$ORG/$APP_NAME:$PREVIEW_VERSION ."
-            sh "docker push $JENKINS_X_DOCKER_REGISTRY_SERVICE_HOST:$JENKINS_X_DOCKER_REGISTRY_SERVICE_PORT/$ORG/$APP_NAME:$PREVIEW_VERSION"
-          }
-
-		  // comment out until draft pack includes preview environment charts
-          //dir ('./charts/preview') {
-          //  container('maven') {
-          //    sh "make preview"
-          //  }
-          //}
-        }
-      }
-
-      stage('Build Release') {
-        when {
-          branch 'master'
-        }
-        steps {
-          container('maven') {
-            // ensure we're not on a detached head
-            sh "git checkout master"
-
-            // until we switch to the new kubernetes / jenkins credential implementation use git credentials store
-            sh "git config --global credential.helper store"
-
-            // so we can retrieve the version in later steps
-            sh "echo \$(jx-release-version) > VERSION"
-            sh "mvn versions:set -DnewVersion=\$(cat VERSION)"
-          }
-
-          dir ('./charts/%s') {
-            container('maven') {
-              sh "make tag"
-            }
-          }
-
-          container('maven') {
-            sh 'mvn clean deploy'
-            sh "docker build -f Dockerfile.release -t $JENKINS_X_DOCKER_REGISTRY_SERVICE_HOST:$JENKINS_X_DOCKER_REGISTRY_SERVICE_PORT/$ORG/$APP_NAME:\$(cat VERSION) ."
-            sh "docker push $JENKINS_X_DOCKER_REGISTRY_SERVICE_HOST:$JENKINS_X_DOCKER_REGISTRY_SERVICE_PORT/$ORG/$APP_NAME:\$(cat VERSION)"
-            sh 'jx step changelog --version \$(cat VERSION)'
-          }
-        }
-      }
-
-      stage('Promote to Environments') {
-        environment {
-          GIT_USERNAME = "$GIT_CREDS_USR"
-          GIT_API_TOKEN = "$GIT_CREDS_PSW"
-        }
-        when {
-          branch 'master'
-        }
-        steps {
-          dir ('./charts/%s') {
-            container('maven') {
-
-              // release the helm chart
-              sh 'make release'
-
-              // promote through all 'Auto' promotion Environments
-              sh 'jx promote -b --all-auto --timeout 1h --version \$(cat ../../VERSION)'
-            }
-          }
-        }
-      }
-
-    }
-  }
 `
 )
 
@@ -175,17 +69,23 @@ type ImportOptions struct {
 	DisableDotGitSearch bool
 	Jenkins             *gojenkins.Jenkins
 	GitConfDir          string
+	GitServer           *auth.AuthServer
+	GitUserAuth         *auth.UserAuth
 	GitProvider         gits.GitProvider
 }
 
 var (
 	import_long = templates.LongDesc(`
-		Imports a git repository or folder into Jenkins X.
+		Imports a local folder or git repository into Jenkins X.
 
 		If you specify no other options or arguments then the current directory is imported.
 	    Or you can use '--dir' to specify a directory to import.
 
-	    You can specify the git URL as an argument.`)
+	    You can specify the git URL as an argument.
+	    
+		For more documentation see: [http://jenkins-x.io/developing/import/](http://jenkins-x.io/developing/import/)
+	    
+	`)
 
 	import_example = templates.Examples(`
 		# Import the current folder
@@ -218,7 +118,7 @@ func NewCmdImport(f cmdutil.Factory, out io.Writer, errOut io.Writer) *cobra.Com
 	}
 	cmd := &cobra.Command{
 		Use:     "import",
-		Short:   "Imports a local project into Jenkins",
+		Short:   "Imports a local project or git repository into Jenkins",
 		Long:    import_long,
 		Example: import_example,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -263,12 +163,12 @@ func (o *ImportOptions) Run() error {
 	f := o.Factory
 	f.SetBatch(o.BatchMode)
 
-	jenkins, err := f.CreateJenkinsClient()
+	jenkinsClient, err := f.CreateJenkinsClient()
 	if err != nil {
 		return err
 	}
 
-	o.Jenkins = jenkins
+	o.Jenkins = jenkinsClient
 
 	client, ns, err := o.Factory.CreateClient()
 	if err != nil {
@@ -277,6 +177,29 @@ func (o *ImportOptions) Run() error {
 	o.currentNamespace = ns
 	o.kubeClient = client
 
+	var userAuth *auth.UserAuth
+	if o.GitProvider == nil {
+		authConfigSvc, err := o.Factory.CreateGitAuthConfigService()
+		if err != nil {
+			return err
+		}
+		config := authConfigSvc.Config()
+		server, err := config.PickOrCreateServer(gits.GitHubURL, "Which git service do you wish to use", o.BatchMode)
+		if err != nil {
+			return err
+		}
+		userAuth, err = config.PickServerUserAuth(server, "git user name", o.BatchMode)
+		if err != nil {
+			return err
+		}
+
+		o.GitServer = server
+		o.GitUserAuth = userAuth
+		o.GitProvider, err = gits.CreateProvider(server, userAuth)
+		if err != nil {
+			return err
+		}
+	}
 	if o.GitHub {
 		return o.ImportProjectsFromGitHub()
 	}
@@ -325,17 +248,6 @@ func (o *ImportOptions) Run() error {
 			return err
 		}
 
-		err = o.DefaultDockerfile()
-		if err != nil {
-			return err
-		}
-	}
-
-	if checkForJenkinsfile {
-		err = o.DefaultJenkinsfile()
-		if err != nil {
-			return err
-		}
 	}
 
 	if o.RepoURL == "" {
@@ -366,30 +278,7 @@ func (o *ImportOptions) Run() error {
 }
 
 func (o *ImportOptions) ImportProjectsFromGitHub() error {
-	authConfigSvc, err := o.Factory.CreateGitAuthConfigService()
-	if err != nil {
-		return err
-	}
-	config := authConfigSvc.Config()
-	server := config.GetOrCreateServer(gits.GitHubHost)
-	userAuth, err := config.PickServerUserAuth(server, "git user name", o.BatchMode)
-	if err != nil {
-		return err
-	}
-	provider, err := gits.CreateProvider(server, userAuth)
-	if err != nil {
-		return err
-	}
-
-	username := userAuth.Username
-	org := o.Organisation
-	if org == "" {
-		org, err = gits.PickOrganisation(provider, username)
-		if err != nil {
-			return err
-		}
-	}
-	repos, err := gits.PickRepositories(provider, org, "Which repositories do you want to import", o.SelectAll, o.SelectFilter)
+	repos, err := gits.PickRepositories(o.GitProvider, o.Organisation, "Which repositories do you want to import", o.SelectAll, o.SelectFilter)
 	if err != nil {
 		return err
 	}
@@ -400,10 +289,10 @@ func (o *ImportOptions) ImportProjectsFromGitHub() error {
 			CommonOptions:           o.CommonOptions,
 			Dir:                     o.Dir,
 			RepoURL:                 r.CloneURL,
-			Organisation:            org,
+			Organisation:            o.Organisation,
 			Repository:              r.Name,
 			Jenkins:                 o.Jenkins,
-			GitProvider:             provider,
+			GitProvider:             o.GitProvider,
 			DisableJenkinsfileCheck: o.DisableJenkinsfileCheck,
 			DisableDraft:            o.DisableDraft,
 		}
@@ -417,7 +306,23 @@ func (o *ImportOptions) ImportProjectsFromGitHub() error {
 }
 
 func (o *ImportOptions) DraftCreate() error {
-	args := []string{"create"}
+
+	draftDir, err := util.DraftDir()
+	if err != nil {
+		return err
+	}
+	draftHome := draftpath.Home(draftDir)
+
+	// lets make sure we have the latest draft packs
+	initOpts := InitOptions{
+		CommonOptions: CommonOptions{
+			Out: o.Out,
+		},
+	}
+	err = initOpts.initDraft()
+	if err != nil {
+		return err
+	}
 
 	// TODO this is a workaround of this draft issue:
 	// https://github.com/Azure/draft/issues/476
@@ -427,44 +332,47 @@ func (o *ImportOptions) DraftCreate() error {
 	if err != nil {
 		return err
 	}
+	lpack := ""
 	if exists {
-		args = []string{"create", "--pack=github.com/jenkins-x/draft-repo/packs/java"}
+		lpack = filepath.Join(draftHome.Packs(), "github.com/jenkins-x/draft-packs/packs/maven")
+
+		exists, _ = util.FileExists(lpack)
+		if !exists {
+			lpack = filepath.Join(draftHome.Packs(), "github.com/jenkins-x/draft-packs/packs/java")
+		}
+	} else {
+		// pack detection time
+		lpack, err = jxdraft.DoPackDetection(draftHome, o.Out, dir)
+
+		if err != nil {
+			return err
+		}
 	}
-	e := exec.Command("draft", args...)
-	e.Dir = dir
-	e.Stdout = os.Stdout
-	e.Stderr = os.Stderr
-	err = e.Run()
+	chartsDir := filepath.Join(dir, "charts")
+	exists, err = util.FileExists(chartsDir)
+	if exists {
+		log.Warn("existing charts folder found so skipping 'draft create' step\n")
+		return nil
+	}
+
+	err = pack.CreateFrom(dir, lpack)
+	if err != nil {
+		return err
+	}
 	if err != nil {
 		// lets ignore draft errors as sometimes it can't find a pack - e.g. for environments
 		o.Printf(util.ColorWarning("WARNING: Failed to run draft create in %s due to %s"), dir, err)
 		//return fmt.Errorf("Failed to run draft create in %s due to %s", dir, err)
 	}
-	// chart expects folder name to be the same as app name
-	oldChartsDir := filepath.Join(dir, "charts", "java")
-	newChartsDir := filepath.Join(dir, "charts", o.AppName)
-	exists, err = util.FileExists(oldChartsDir)
-	if err != nil {
-		return err
-	}
-	if exists {
-		os.Rename(oldChartsDir, newChartsDir)
-	}
 
-	// now update the chart.yaml
-	err = o.addAppNameToGeneratedFile("Chart.yaml", "name: ", o.AppName)
+	// lets rename the chart to be the same as our app name
+	err = o.renameChartToMatchAppName()
 	if err != nil {
 		return err
 	}
 
-	// now update the makefile
-	err = o.addAppNameToGeneratedFile("Makefile", "NAME := ", o.AppName)
-	if err != nil {
-		return err
-	}
-
-	// now update the helm values which contains the image name
-	err = o.addAppNameToGeneratedFile("values.yaml", "  repository: ", fmt.Sprintf("%s/%s", "jenkinsx", o.AppName))
+	//walk through every file in the given dir and update the placeholders
+	err = o.replacePlaceholders()
 	if err != nil {
 		return err
 	}
@@ -480,71 +388,20 @@ func (o *ImportOptions) DraftCreate() error {
 	return nil
 }
 
-func (o *ImportOptions) DefaultJenkinsfile() error {
-
-	dir := o.Dir
-	name := filepath.Join(dir, "Jenkinsfile")
-	exists, err := util.FileExists(name)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-
-	data := []byte(fmt.Sprintf(defaultJenkinsfile, o.AppName, o.AppName, o.AppName))
-	err = ioutil.WriteFile(name, data, DefaultWritePermissions)
-	if err != nil {
-		return fmt.Errorf("Failed to write %s due to %s", name, err)
-	}
-	err = gits.GitAdd(dir, "Jenkinsfile")
-	if err != nil {
-		return err
-	}
-	err = gits.GitCommitIfChanges(dir, "Added default Jenkinsfile pipeline")
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (o *ImportOptions) DefaultDockerfile() error {
-
-	dir := o.Dir
-	name := filepath.Join(dir, "Dockerfile.release")
-	exists, err := util.FileExists(name)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-	data := []byte(defaultDockerfile)
-	err = ioutil.WriteFile(name, data, DefaultWritePermissions)
-	if err != nil {
-		return fmt.Errorf("Failed to write %s due to %s", name, err)
-	}
-	err = gits.GitAdd(dir, "Dockerfile.release")
-	if err != nil {
-		return err
-	}
-	err = gits.GitCommitIfChanges(dir, "Added Release Dockerfile pipeline")
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (o *ImportOptions) CreateNewRemoteRepository() error {
 	f := o.Factory
 	authConfigSvc, err := f.CreateGitAuthConfigService()
 	if err != nil {
 		return err
 	}
+
 	dir := o.Dir
 	_, defaultRepoName := filepath.Split(dir)
 
-	details, err := gits.PickNewGitRepository(o.Out, o.BatchMode, authConfigSvc, defaultRepoName, o.GitRepositoryOptions)
+	if o.Organisation != "" {
+		o.GitRepositoryOptions.Owner = o.Organisation
+	}
+	details, err := gits.PickNewGitRepository(o.Out, o.BatchMode, authConfigSvc, defaultRepoName, &o.GitRepositoryOptions, o.GitServer, o.GitUserAuth)
 	if err != nil {
 		return err
 	}
@@ -574,11 +431,11 @@ func (o *ImportOptions) CreateNewRemoteRepository() error {
 func (o *ImportOptions) CloneRepository() error {
 	url := o.RepoURL
 	if url == "" {
-		return fmt.Errorf("No git repository URL defined!")
+		return fmt.Errorf("no git repository URL defined!")
 	}
 	gitInfo, err := gits.ParseGitURL(url)
 	if err != nil {
-		return fmt.Errorf("Failed to parse git URL %s due to: %s", url, err)
+		return fmt.Errorf("failed to parse git URL %s due to: %s", url, err)
 	}
 	if gitInfo.Host == gits.GitHubHost && strings.HasPrefix(gitInfo.Scheme, "http") {
 		if !strings.HasSuffix(url, ".git") {
@@ -614,7 +471,7 @@ func (o *ImportOptions) DiscoverGit() error {
 
 	dir := o.Dir
 	if dir == "" {
-		return fmt.Errorf("No directory specified!")
+		return fmt.Errorf("no directory specified!")
 	}
 
 	// lets prompt the user to initialise the git repository
@@ -630,7 +487,7 @@ func (o *ImportOptions) DiscoverGit() error {
 			return err
 		}
 		if !flag {
-			return fmt.Errorf("Please initialise git yourself then try again")
+			return fmt.Errorf("please initialise git yourself then try again")
 		}
 	}
 	err := gits.GitInit(dir)
@@ -690,7 +547,7 @@ func (o *ImportOptions) DefaultGitIgnore() error {
 		data := []byte(defaultGitIgnoreFile)
 		err = ioutil.WriteFile(name, data, DefaultWritePermissions)
 		if err != nil {
-			return fmt.Errorf("Failed to write %s due to %s", name, err)
+			return fmt.Errorf("failed to write %s due to %s", name, err)
 		}
 	}
 	return nil
@@ -701,17 +558,17 @@ func (o *ImportOptions) DefaultGitIgnore() error {
 func (o *ImportOptions) DiscoverRemoteGitURL() error {
 	gitConf := o.GitConfDir
 	if gitConf == "" {
-		return fmt.Errorf("No GitConfDir defined!")
+		return fmt.Errorf("no GitConfDir defined!")
 	}
 	cfg := gitcfg.NewConfig()
 	data, err := ioutil.ReadFile(gitConf)
 	if err != nil {
-		return fmt.Errorf("Failed to load %s due to %s", gitConf, err)
+		return fmt.Errorf("failed to load %s due to %s", gitConf, err)
 	}
 
 	err = cfg.Unmarshal(data)
 	if err != nil {
-		return fmt.Errorf("Failed to unmarshal %s due to %s", gitConf, err)
+		return fmt.Errorf("failed to unmarshal %s due to %s", gitConf, err)
 	}
 	remotes := cfg.Remotes
 	if len(remotes) == 0 {
@@ -735,11 +592,11 @@ func (o *ImportOptions) DiscoverRemoteGitURL() error {
 
 func (o *ImportOptions) DoImport() error {
 	if o.Jenkins == nil {
-		jenkins, err := o.Factory.CreateJenkinsClient()
+		jclient, err := o.Factory.CreateJenkinsClient()
 		if err != nil {
 			return err
 		}
-		o.Jenkins = jenkins
+		o.Jenkins = jclient
 	}
 	gitURL := o.RepoURL
 	gitProvider := o.GitProvider
@@ -759,7 +616,48 @@ func (o *ImportOptions) DoImport() error {
 	if jenkinsfile == "" {
 		jenkinsfile = jenkins.DefaultJenkinsfile
 	}
-	return jenkins.ImportProject(o.Out, o.Jenkins, gitURL, o.Dir, jenkinsfile, o.BranchPattern, o.Credentials, false, gitProvider, authConfigSvc)
+	return jenkins.ImportProject(o.Out, o.Jenkins, gitURL, o.Dir, jenkinsfile, o.BranchPattern, o.Credentials, false, gitProvider, authConfigSvc, false, o.BatchMode)
+}
+
+func (o *ImportOptions) replacePlaceholders() error {
+	log.Infof("replacing placeholders in directory %s\n", o.Dir)
+	gitServer := strings.TrimSuffix(strings.TrimPrefix(o.GitRepositoryOptions.ServerURL, "https://"), "/")
+
+	log.Infof("app name: %s, git server: %s, org: %s\n", o.AppName, gitServer, o.Organisation)
+
+	if err := filepath.Walk(o.Dir, func(f string, fi os.FileInfo, err error) error {
+		if fi.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if !fi.IsDir() {
+			input, err := ioutil.ReadFile(f)
+			if err != nil {
+				log.Errorf("failed to read file %s: %v", f, err)
+				return err
+			}
+
+			lines := strings.Split(string(input), "\n")
+
+			for i, line := range lines {
+				line = strings.Replace(line, PlaceHolderAppName, o.AppName, -1)
+				line = strings.Replace(line, PlaceHolderGitProvider, gitServer, -1)
+				line = strings.Replace(line, PlaceHolderOrg, o.Organisation, -1)
+				lines[i] = line
+			}
+			output := strings.Join(lines, "\n")
+			err = ioutil.WriteFile(f, []byte(output), 0644)
+			if err != nil {
+				log.Errorf("failed to write file %s: %v", f, err)
+				return err
+			}
+		}
+		return nil
+
+	}); err != nil {
+		return fmt.Errorf("error replacing placeholders %v", err)
+	}
+
+	return nil
 }
 
 func (o *ImportOptions) addAppNameToGeneratedFile(filename, field, value string) error {
@@ -801,7 +699,7 @@ func (o *ImportOptions) checkChartmuseumCredentialExists() error {
 	if err != nil {
 		secret, err := o.kubeClient.CoreV1().Secrets(o.currentNamespace).Get(name, meta_v1.GetOptions{})
 		if err != nil {
-			fmt.Errorf("error getting %s secret %v", name, err)
+			return fmt.Errorf("error getting %s secret %v", name, err)
 		}
 
 		data := secret.Data
@@ -811,6 +709,50 @@ func (o *ImportOptions) checkChartmuseumCredentialExists() error {
 		err = o.Jenkins.CreateCredential(name, username, password)
 		if err != nil {
 			return fmt.Errorf("error creating jenkins credential %s %v", name, err)
+		}
+	}
+	return nil
+}
+func (o *ImportOptions) renameChartToMatchAppName() error {
+	var oldChartsDir string
+	dir := o.Dir
+	chartsDir := filepath.Join(dir, "charts")
+	files, err := ioutil.ReadDir(chartsDir)
+	if err != nil {
+		return fmt.Errorf("error matching a jenkins x draft pack name with chart folder %v", err)
+	}
+	for _, fi := range files {
+		if fi.IsDir() {
+			name := fi.Name()
+			// TODO we maybe need to try check if the sub dir named after the build pack matches first?
+			if name != "preview" && name != ".git" {
+				oldChartsDir = filepath.Join(chartsDir, name)
+				break
+			}
+		}
+	}
+	if oldChartsDir != "" {
+		// chart expects folder name to be the same as app name
+		newChartsDir := filepath.Join(dir, "charts", o.AppName)
+
+		exists, err := util.FileExists(oldChartsDir)
+		if err != nil {
+			return err
+		}
+		if exists {
+			err = util.RenameDir(oldChartsDir, newChartsDir, false)
+			if err != nil {
+				return fmt.Errorf("error renaming %s to %s, %v", oldChartsDir, newChartsDir, err)
+			}
+			_, err = os.Stat(newChartsDir)
+			if err != nil {
+				return err
+			}
+		}
+		// now update the chart.yaml
+		err = o.addAppNameToGeneratedFile("Chart.yaml", "name: ", o.AppName)
+		if err != nil {
+			return err
 		}
 	}
 	return nil

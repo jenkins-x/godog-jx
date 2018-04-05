@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
-
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
@@ -15,6 +13,7 @@ import (
 	"github.com/chromedp/chromedp/runner"
 	"github.com/jenkins-x/jx/pkg/auth"
 	"github.com/jenkins-x/jx/pkg/jenkins"
+	"github.com/jenkins-x/jx/pkg/jx/cmd/log"
 	"github.com/jenkins-x/jx/pkg/jx/cmd/templates"
 	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 	"github.com/jenkins-x/jx/pkg/kube"
@@ -48,6 +47,7 @@ type CreateJenkinsUserOptions struct {
 	Password    string
 	ApiToken    string
 	Timeout     string
+	UseBrowser  bool
 }
 
 // NewCmdCreateJenkinsUser creates a command
@@ -63,9 +63,9 @@ func NewCmdCreateJenkinsUser(f cmdutil.Factory, out io.Writer, errOut io.Writer)
 	}
 
 	cmd := &cobra.Command{
-		Use:     "user [username]",
-		Short:   "Adds a new user name and api token for a jenkins server server",
-		Aliases: []string{"token"},
+		Use:     "token [username]",
+		Short:   "Adds a new username and api token for a Jenkins server",
+		Aliases: []string{"api-token"},
 		Long:    create_jenkins_user_long,
 		Example: create_jenkins_user_example,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -80,6 +80,7 @@ func NewCmdCreateJenkinsUser(f cmdutil.Factory, out io.Writer, errOut io.Writer)
 	cmd.Flags().StringVarP(&options.ApiToken, "api-token", "t", "", "The API Token for the user")
 	cmd.Flags().StringVarP(&options.Password, "password", "p", "", "The User password to try automatically create a new API Token")
 	cmd.Flags().StringVarP(&options.Timeout, "timeout", "", "", "The timeout if using browser automation to generate the API token (by passing username and password)")
+	cmd.Flags().BoolVarP(&options.UseBrowser, "browser", "", false, "Use a Chrome browser to automatically find the API token if the user and password are known")
 
 	return cmd
 }
@@ -129,19 +130,24 @@ func (o *CreateJenkinsUserOptions) Run() error {
 	}
 
 	tokenUrl := jenkins.JenkinsTokenURL(server.URL)
-
-	if userAuth.IsInvalid() && o.Password != "" {
+	if o.Verbose {
+		log.Infof("using url %s\n", tokenUrl)
+	}
+	if userAuth.IsInvalid() && o.Password != "" && o.UseBrowser {
 		err := o.tryFindAPITokenFromBrowser(tokenUrl, userAuth)
 		if err != nil {
-			return err
+			log.Warnf("unable to automaticaly find API token with chromedp using URL %s\n", tokenUrl)
 		}
 	}
 
 	if userAuth.IsInvalid() {
-		jenkins.PrintGetTokenFromURL(o.Out, tokenUrl)
-		o.Printf("Then COPY the token and enter in into the form below:\n\n")
+		f := func(username string) error {
+			jenkins.PrintGetTokenFromURL(o.Out, tokenUrl)
+			o.Printf("Then COPY the token and enter in into the form below:\n\n")
+			return nil
+		}
 
-		err = config.EditUserAuth("Jenkins", userAuth, o.Username, false, o.BatchMode)
+		err = config.EditUserAuth("Jenkins", userAuth, o.Username, false, o.BatchMode, f)
 		if err != nil {
 			return err
 		}
@@ -155,7 +161,7 @@ func (o *CreateJenkinsUserOptions) Run() error {
 	if err != nil {
 		return err
 	}
-	o.Printf("Created user %s API Token for git server %s at %s\n",
+	o.Printf("Created user %s API Token for Jenkins server %s at %s\n",
 		util.ColorInfo(o.Username), util.ColorInfo(server.Name), util.ColorInfo(server.URL))
 	return nil
 }
@@ -243,7 +249,7 @@ func (o *CreateJenkinsUserOptions) tryFindAPITokenFromBrowser(tokenUrl string, u
 			break
 		}
 	}
-	o.Printf("Found API Token %s\n", util.ColorInfo(token))
+	o.Printf("Found API Token\n")
 	if token != "" {
 		userAuth.ApiToken = token
 	}
@@ -285,7 +291,7 @@ func (o *CommonOptions) captureScreenshot(ctxt context.Context, c *chromedp.CDP,
 
 	err = ioutil.WriteFile(screenshotFile, picture, util.DefaultWritePermissions)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 
 	o.Printf("Saved screenshot: %s\n", util.ColorInfo(screenshotFile))

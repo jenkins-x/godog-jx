@@ -30,6 +30,7 @@ import (
 
 const (
 	JenkinsAuthConfigFile     = "jenkinsAuth.yaml"
+	IssuesAuthConfigFile      = "issuesAuth.yaml"
 	GitAuthConfigFile         = "gitAuth.yaml"
 	ChartmuseumAuthConfigFile = "chartmuseumAuth.yaml"
 )
@@ -43,9 +44,13 @@ type Factory interface {
 
 	CreateGitAuthConfigService() (auth.AuthConfigService, error)
 
+	CreateGitAuthConfigServiceForURL(gitURL string) (auth.AuthConfigService, error)
+
 	CreateJenkinsAuthConfigService() (auth.AuthConfigService, error)
 
 	CreateChartmuseumAuthConfigService() (auth.AuthConfigService, error)
+
+	CreateIssueTrackerAuthConfigService() (auth.AuthConfigService, error)
 
 	CreateClient() (*kubernetes.Clientset, string, error)
 
@@ -77,6 +82,7 @@ func (f *factory) SetBatch(batch bool) {
 
 // CreateJenkinsClient creates a new jenkins client
 func (f *factory) CreateJenkinsClient() (*gojenkins.Jenkins, error) {
+
 	svc, err := f.CreateJenkinsAuthConfigService()
 	if err != nil {
 		return nil, err
@@ -137,50 +143,85 @@ func (f *factory) CreateChartmuseumAuthConfigService() (auth.AuthConfigService, 
 	return authConfigSvc, err
 }
 
-func (f *factory) CreateGitAuthConfigService() (auth.AuthConfigService, error) {
+func (f *factory) CreateIssueTrackerAuthConfigService() (auth.AuthConfigService, error) {
+	authConfigSvc, err := f.CreateAuthConfigService(IssuesAuthConfigFile)
+	if err != nil {
+		return authConfigSvc, err
+	}
+	config, err := authConfigSvc.LoadConfig()
+	if err != nil {
+		return authConfigSvc, err
+	}
 
-	// if in cluster then there's no user configfile, so check for env vars first
-	userAuth := auth.CreateAuthUserFromEnvironment("GIT")
-	authConfigSvc := auth.AuthConfigService{}
-
-	if userAuth.IsInvalid() {
-		authConfigSvc, err := f.CreateAuthConfigService(GitAuthConfigFile)
-		if err != nil {
-			return authConfigSvc, err
-		}
-
-		config, err := authConfigSvc.LoadConfig()
-		if err != nil {
-			return authConfigSvc, err
-		}
-
-		// lets add a default if there's none defined yet
-		if len(config.Servers) == 0 {
+	// lets add a default if there's none defined yet
+	if len(config.Servers) == 0 {
+		// if in cluster then there's no user configfile, so check for env vars first
+		userAuth := auth.CreateAuthUserFromEnvironment("ISSUES")
+		// TODO discover via the Dev Environment?
+		// TODO discover the kind too
+		if userAuth.Username != "" || !userAuth.IsInvalid() {
+			defaultServer := ""
 			config.Servers = []*auth.AuthServer{
 				{
-					Name:  "GitHub",
-					URL:   "github.com",
-					Users: []*auth.UserAuth{},
+					Name:  "Issues",
+					URL:   defaultServer,
+					Users: []*auth.UserAuth{&userAuth},
 				},
 			}
 		}
-		return authConfigSvc, nil
 	}
+	return authConfigSvc, err
+}
 
-	// if no config file is being used lets grab the git server from the current directory
-	server, err := gits.GetGitServer("")
+func (f *factory) CreateGitAuthConfigService() (auth.AuthConfigService, error) {
+	return f.CreateGitAuthConfigServiceForURL("")
+}
+
+func (f *factory) CreateGitAuthConfigServiceForURL(gitURL string) (auth.AuthConfigService, error) {
+	authConfigSvc, err := f.CreateAuthConfigService(GitAuthConfigFile)
 	if err != nil {
-		return authConfigSvc, fmt.Errorf("unable to get remote git repo server, %v", err)
+		return authConfigSvc, err
 	}
 
-	authConfigSvc.Config().Servers = []*auth.AuthServer{
-		{
-			Name:  "Git",
-			URL:   server,
-			Users: []*auth.UserAuth{&userAuth},
-		},
+	config, err := authConfigSvc.LoadConfig()
+	if err != nil {
+		return authConfigSvc, err
 	}
 
+	// lets add a default if there's none defined yet
+	if len(config.Servers) == 0 {
+		// if in cluster then there's no user configfile, so check for env vars first
+		userAuth := auth.CreateAuthUserFromEnvironment("GIT")
+		if !userAuth.IsInvalid() {
+			// if no config file is being used lets grab the git server from the current directory
+			server := gitURL
+			if server == "" {
+				server, err = gits.GetGitServer("")
+				if err != nil {
+					fmt.Printf("WARNING: unable to get remote git repo server, %v\n", err)
+					server = "https://github.com"
+				}
+			}
+			config.Servers = []*auth.AuthServer{
+				{
+					Name:  "Git",
+					URL:   server,
+					Users: []*auth.UserAuth{&userAuth},
+				},
+			}
+		}
+	}
+
+	if len(config.Servers) == 0 {
+		config.Servers = []*auth.AuthServer{
+			{
+				Name:  "GitHub",
+				URL:   "https://github.com",
+				Kind:  "GitHub",
+				Users: []*auth.UserAuth{},
+			},
+		}
+	}
 	return authConfigSvc, nil
 }
 

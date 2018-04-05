@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	typev1 "github.com/jenkins-x/jx/pkg/client/clientset/versioned/typed/jenkins.io/v1"
 	"github.com/jenkins-x/jx/pkg/gits"
 	"github.com/jenkins-x/jx/pkg/helm"
+	"github.com/jenkins-x/jx/pkg/jx/cmd/log"
 	"github.com/jenkins-x/jx/pkg/jx/cmd/templates"
 	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 	"github.com/jenkins-x/jx/pkg/kube"
@@ -21,7 +23,6 @@ import (
 	"gopkg.in/AlecAivazis/survey.v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"strconv"
 )
 
 const (
@@ -50,6 +51,7 @@ type PromoteOptions struct {
 	HelmRepositoryURL   string
 	NoHelmUpdate        bool
 	AllAutomatic        bool
+	NoMergePullRequest  bool
 	Timeout             string
 	PullRequestPollTime string
 
@@ -59,6 +61,7 @@ type PromoteOptions struct {
 	Activities              typev1.PipelineActivityInterface
 	GitInfo                 *gits.GitRepositoryInfo
 	jenkinsURL              string
+	releaseResource         *v1.Release
 }
 
 type ReleaseInfo struct {
@@ -77,6 +80,9 @@ type ReleasePullRequestInfo struct {
 var (
 	promote_long = templates.LongDesc(`
 		Promotes a version of an application to zero to many permanent environments.
+
+		For more documentation see: [http://jenkins-x.io/about/features/#promotion](http://jenkins-x.io/about/features/#promotion)
+
 `)
 
 	promote_example = templates.Examples(`
@@ -85,7 +91,7 @@ var (
 		jx promote --version 1.2.3 --env staging
 
 		# Promote a version of the myapp application to production
-		jx promote myapp --version 1.2.3 --env prod
+		jx promote myapp --version 1.2.3 --env production
 
 		# To create or update a Preview Environment please see the 'jx preview' command
 		jx preview
@@ -133,6 +139,7 @@ func (options *PromoteOptions) addPromoteOptions(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&options.Timeout, optionTimeout, "t", "1h", "The timeout to wait for the promotion to succeed in the underlying Environment. The command fails if the timeout is exceeded or the promotion does not complete")
 	cmd.Flags().StringVarP(&options.PullRequestPollTime, optionPullRequestPollTime, "", "20s", "Poll time when waiting for a Pull Request to merge")
 	cmd.Flags().BoolVarP(&options.NoHelmUpdate, "no-helm-update", "", false, "Allows the 'helm repo update' command if you are sure your local helm cache is up to date with the version you wish to promote")
+	cmd.Flags().BoolVarP(&options.NoMergePullRequest, "no-merge", "", false, "Disables automatic merge of promote Pull Requests")
 }
 
 // Run implements this command
@@ -175,7 +182,15 @@ func (o *PromoteOptions) Run() error {
 	if err != nil {
 		return err
 	}
+	err = kube.RegisterEnvironmentCRD(apisClient)
+	if err != nil {
+		return err
+	}
 	err = kube.RegisterPipelineActivityCRD(apisClient)
+	if err != nil {
+		return err
+	}
+	err = kube.RegisterGitServiceCRD(apisClient)
 	if err != nil {
 		return err
 	}
@@ -194,6 +209,12 @@ func (o *PromoteOptions) Run() error {
 
 	if o.AllAutomatic {
 		return o.PromoteAllAutomatic()
+	}
+	if env == nil {
+		if o.Environment == "" {
+			return util.MissingOption(optionEnvironment)
+		}
+		return fmt.Errorf("Could not find an Environment called %s", o.Environment)
 	}
 	releaseInfo, err := o.Promote(targetNS, env, true)
 	err = o.WaitForPromotion(targetNS, env, releaseInfo)
@@ -261,7 +282,6 @@ func (o *PromoteOptions) Promote(targetNS string, env *v1.Environment, warnIfAut
 	} else {
 		o.Printf("Promoting app %s version %s to namespace %s\n", info(app), info(version), info(targetNS))
 	}
-
 	fullAppName := app
 	if o.LocalHelmRepoName != "" {
 		fullAppName = o.LocalHelmRepoName + "/" + app
@@ -294,7 +314,6 @@ func (o *PromoteOptions) Promote(targetNS string, env *v1.Environment, warnIfAut
 		}
 	}
 	promoteKey := o.createPromoteKey(env)
-
 	if env != nil {
 		source := &env.Spec.Source
 		if source.URL != "" && env.Spec.Kind.IsPermanent() {
@@ -311,21 +330,17 @@ func (o *PromoteOptions) Promote(targetNS string, env *v1.Environment, warnIfAut
 					}
 					return nil
 				}
-
 				err = promoteKey.OnPromotePullRequest(o.Activities, startPromotePR)
 				// lets sleep a little before we try poll for the PR status
 				time.Sleep(waitAfterPullRequestCreated)
 			}
-
 			return releaseInfo, err
 		}
 	}
-
 	err := o.verifyHelmConfigured()
 	if err != nil {
 		return releaseInfo, err
 	}
-
 	// lets do a helm update to ensure we can find the latest version
 	if !o.NoHelmUpdate {
 		o.Printf("Updating the helm repositories to ensure we can find the latest versions...")
@@ -350,10 +365,11 @@ func (o *PromoteOptions) Promote(targetNS string, env *v1.Environment, warnIfAut
 		err = o.runCommand("helm", "upgrade", "--install", "--wait", "--namespace", targetNS, releaseName, fullAppName)
 	}
 	if err == nil {
-		err = promoteKey.OnPromoteUpdate(o.Activities, kube.CompletePromotionUpdate)
-		if err == nil {
-			err = o.commentOnIssues(targetNS, env)
+		err = o.commentOnIssues(targetNS, env, promoteKey)
+		if err != nil {
+			o.warnf("Failed to comment on issues for release %s: %s\n", releaseName, err)
 		}
+		err = promoteKey.OnPromoteUpdate(o.Activities, kube.CompletePromotionUpdate)
 	} else {
 		err = promoteKey.OnPromoteUpdate(o.Activities, kube.FailedPromotionUpdate)
 	}
@@ -739,9 +755,9 @@ func (o *PromoteOptions) waitForGitOpsPullRequest(ns string, env *v1.Environment
 							}
 							if succeeded {
 								o.Printf("Merge status checks all passed so the promotion worked!\n")
-								err = promoteKey.OnPromoteUpdate(o.Activities, kube.CompletePromotionUpdate)
+								err = o.commentOnIssues(ns, env, promoteKey)
 								if err == nil {
-									err = o.commentOnIssues(ns, env)
+									err = promoteKey.OnPromoteUpdate(o.Activities, kube.CompletePromotionUpdate)
 								}
 								return err
 							}
@@ -761,11 +777,13 @@ func (o *PromoteOptions) waitForGitOpsPullRequest(ns string, env *v1.Environment
 					//return fmt.Errorf("Failed to query the Pull Request last commit status for %s ref %s %s", pr.URL, pr.LastCommitSha, err)
 				} else {
 					if status == "success" {
-						err = gitProvider.MergePullRequest(pr, "jx promote automatically merged promotion PR")
-						if err != nil {
-							if !logMergeFailure {
-								logMergeFailure = true
-								o.warnf("Failed to merge the Pull Request %s due to %s maybe I don't have karma?\n", pr.URL, err)
+						if !o.NoMergePullRequest {
+							err = gitProvider.MergePullRequest(pr, "jx promote automatically merged promotion PR")
+							if err != nil {
+								if !logMergeFailure {
+									logMergeFailure = true
+									o.warnf("Failed to merge the Pull Request %s due to %s maybe I don't have karma?\n", pr.URL, err)
+								}
 							}
 						}
 					} else if status == "error" || status == "failure" {
@@ -852,6 +870,20 @@ func (o *PromoteOptions) createPromoteKey(env *v1.Environment) *kube.PromoteStep
 	buildURL := os.Getenv("BUILD_URL")
 	buildLogsURL := os.Getenv("BUILD_LOG_URL")
 	gitInfo, err := gits.GetGitInfo("")
+	releaseNotesURL := ""
+	releaseName := o.ReleaseName
+	if o.releaseResource == nil && releaseName != "" {
+		jxClient, _, err := o.JXClient()
+		if err == nil && jxClient != nil {
+			release, err := jxClient.JenkinsV1().Releases(env.Spec.Namespace).Get(releaseName, metav1.GetOptions{})
+			if err == nil && release != nil {
+				o.releaseResource = release
+			}
+		}
+	}
+	if o.releaseResource != nil {
+		releaseNotesURL = o.releaseResource.Spec.ReleaseNotesURL
+	}
 	if err != nil {
 		o.warnf("Could not discover the git repository info %s\n", err)
 	} else {
@@ -916,12 +948,13 @@ func (o *PromoteOptions) createPromoteKey(env *v1.Environment) *kube.PromoteStep
 	o.Printf("Using pipeline: %s build: %s\n", util.ColorInfo(pipeline), util.ColorInfo("#"+build))
 	return &kube.PromoteStepActivityKey{
 		PipelineActivityKey: kube.PipelineActivityKey{
-			Name:         name,
-			Pipeline:     pipeline,
-			Build:        build,
-			BuildURL:     buildURL,
-			BuildLogsURL: buildLogsURL,
-			GitInfo:      gitInfo,
+			Name:            name,
+			Pipeline:        pipeline,
+			Build:           build,
+			BuildURL:        buildURL,
+			BuildLogsURL:    buildLogsURL,
+			GitInfo:         gitInfo,
+			ReleaseNotesURL: releaseNotesURL,
 		},
 		Environment: env.Name,
 	}
@@ -929,6 +962,7 @@ func (o *PromoteOptions) createPromoteKey(env *v1.Environment) *kube.PromoteStep
 
 // getLatestPipelineBuild for the given pipeline name lets try find the Jenkins Pipeline and the latest build
 func (o *PromoteOptions) getLatestPipelineBuild(pipeline string) (string, string, error) {
+	log.Infof("pipeline %s\n", pipeline)
 	build := ""
 	jenkins, err := o.Factory.CreateJenkinsClient()
 	if err != nil {
@@ -960,7 +994,7 @@ func (o *PromoteOptions) getJenkinsURL() string {
 }
 
 // commentOnIssues comments on any issues for a release that the fix is available in the given environment
-func (o *PromoteOptions) commentOnIssues(targetNS string, environment *v1.Environment) error {
+func (o *PromoteOptions) commentOnIssues(targetNS string, environment *v1.Environment, promoteKey *kube.PromoteStepActivityKey) error {
 	ens := environment.Spec.Namespace
 	envName := environment.Spec.Label
 	app := o.Application
@@ -1005,39 +1039,58 @@ func (o *PromoteOptions) commentOnIssues(targetNS string, environment *v1.Enviro
 	if err != nil {
 		return err
 	}
-	release, err := jxClient.JenkinsV1().Releases(ens).Get(releaseName, metav1.GetOptions{})
-	if err == nil && release != nil {
-		issues := release.Spec.Issues
-
-		url, err := kube.FindServiceURL(kubeClient, ens, app)
-		if url == "" || err != nil {
-			url, err = kube.FindServiceURL(kubeClient, ens, o.ReleaseName)
-		}
-		available := ""
+	appNames := []string{app, o.ReleaseName, ens + "-" + app}
+	url := ""
+	for _, n := range appNames {
+		url, err = kube.FindServiceURL(kubeClient, ens, n)
 		if url != "" {
-			available = fmt.Sprintf(" and available at %s", url)
+			break
 		}
+	}
+	if url == "" {
+		o.warnf("Could not find the service URL in namespace %s for names %s\n", ens, strings.Join(appNames, ", "))
+	}
+	available := ""
+	if url != "" {
+		available = fmt.Sprintf(" and available [here](%s)", url)
+	}
 
-		if available == "" {
-			ing, err := kubeClient.ExtensionsV1beta1().Ingresses(ens).Get(app, metav1.GetOptions{})
-			if err != nil || ing == nil && o.ReleaseName != "" && o.ReleaseName != app {
-				ing, err = kubeClient.ExtensionsV1beta1().Ingresses(ens).Get(o.ReleaseName, metav1.GetOptions{})
-			}
-			if ing != nil {
-				if len(ing.Spec.Rules) > 0 {
-					hostname := ing.Spec.Rules[0].Host
-					if hostname != "" {
-						available = fmt.Sprintf(" and available at %s", hostname)
-					}
+	if available == "" {
+		ing, err := kubeClient.ExtensionsV1beta1().Ingresses(ens).Get(app, metav1.GetOptions{})
+		if err != nil || ing == nil && o.ReleaseName != "" && o.ReleaseName != app {
+			ing, err = kubeClient.ExtensionsV1beta1().Ingresses(ens).Get(o.ReleaseName, metav1.GetOptions{})
+		}
+		if ing != nil {
+			if len(ing.Spec.Rules) > 0 {
+				hostname := ing.Spec.Rules[0].Host
+				if hostname != "" {
+					available = fmt.Sprintf(" and available at %s", hostname)
+					url = hostname
 				}
 			}
 		}
+	}
 
+	// lets try update the PipelineActivity
+	if url != "" && promoteKey.ApplicationURL == "" {
+		promoteKey.ApplicationURL = url
+		o.Printf("Application is available at: %s\n", util.ColorInfo(url))
+	}
+
+	release, err := jxClient.JenkinsV1().Releases(ens).Get(releaseName, metav1.GetOptions{})
+	if err == nil && release != nil {
+		o.releaseResource = release
+		issues := release.Spec.Issues
+
+		versionMessage := version
+		if release.Spec.ReleaseNotesURL != "" {
+			versionMessage = "[" + version + "](" + release.Spec.ReleaseNotesURL + ")"
+		}
 		for _, issue := range issues {
 			if issue.IsClosed() {
 				o.Printf("Commenting that issue %s is now in %s\n", util.ColorInfo(issue.URL), util.ColorInfo(envName))
 
-				comment := fmt.Sprintf(":white_check_mark: the fix for this issue is now deployed to **%s** in version %s %s", envName, version, available)
+				comment := fmt.Sprintf(":white_check_mark: the fix for this issue is now deployed to **%s** in version %s %s", envName, versionMessage, available)
 				id := issue.ID
 				if id != "" {
 					number, err := strconv.Atoi(id)

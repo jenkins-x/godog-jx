@@ -3,13 +3,15 @@ package auth
 import (
 	"fmt"
 	"sort"
+	"strings"
 
+	"github.com/jenkins-x/jx/pkg/util"
 	"gopkg.in/AlecAivazis/survey.v1"
 )
 
 func (c *AuthConfig) FindUserAuths(serverURL string) []*UserAuth {
 	for _, server := range c.Servers {
-		if server.URL == serverURL {
+		if urlsEqual(server.URL, serverURL) {
 			return server.Users
 		}
 	}
@@ -68,7 +70,7 @@ func (config *AuthConfig) IndexOfServerName(name string) int {
 func (c *AuthConfig) SetUserAuth(url string, auth *UserAuth) {
 	username := auth.Username
 	for i, server := range c.Servers {
-		if server.URL == url {
+		if urlsEqual(server.URL, url) {
 			for j, a := range server.Users {
 				if a.Username == auth.Username {
 					c.Servers[i].Users[j] = auth
@@ -88,9 +90,13 @@ func (c *AuthConfig) SetUserAuth(url string, auth *UserAuth) {
 	})
 }
 
+func urlsEqual(url1, url2 string) bool {
+	return url1 == url2 || strings.TrimSuffix(url1, "/") == strings.TrimSuffix(url2, "/")
+}
+
 func (c *AuthConfig) GetServer(url string) *AuthServer {
 	for _, s := range c.Servers {
-		if s.URL == url {
+		if urlsEqual(s.URL, url) {
 			return s
 		}
 	}
@@ -109,7 +115,7 @@ func (c *AuthConfig) GetServerByName(name string) *AuthServer {
 func (c *AuthConfig) GetOrCreateServer(url string) *AuthServer {
 	name := ""
 	kind := ""
-	if url == "github.com" {
+	if url == "github.com" || strings.HasPrefix(url, "https://github.com") {
 		name = "GitHub"
 		kind = "github"
 	}
@@ -133,7 +139,7 @@ func (c *AuthConfig) GetOrCreateServerName(url string, name string, kind string)
 	return s
 }
 
-func (c *AuthConfig) PickServer(message string) (*AuthServer, error) {
+func (c *AuthConfig) PickServer(message string, batchMode bool) (*AuthServer, error) {
 	if c.Servers == nil || len(c.Servers) == 0 {
 		return nil, fmt.Errorf("No servers available!")
 	}
@@ -146,17 +152,21 @@ func (c *AuthConfig) PickServer(message string) (*AuthServer, error) {
 	}
 	url := ""
 	if len(urls) > 1 {
-		prompt := &survey.Select{
-			Message: message,
-			Options: urls,
-		}
-		err := survey.AskOne(prompt, &url, nil)
-		if err != nil {
-			return nil, err
+		if batchMode {
+			url = c.CurrentServer
+		} else {
+			prompt := &survey.Select{
+				Message: message,
+				Options: urls,
+			}
+			err := survey.AskOne(prompt, &url, survey.Required)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	for _, s := range c.Servers {
-		if s.URL == url {
+		if urlsEqual(s.URL, url) {
 			return s, nil
 		}
 	}
@@ -167,6 +177,7 @@ func (c *AuthConfig) PickServerUserAuth(server *AuthServer, message string, batc
 	url := server.URL
 	userAuths := c.FindUserAuths(url)
 	if len(userAuths) == 1 {
+
 		auth := userAuths[0]
 		if batchMode {
 			return auth, nil
@@ -217,8 +228,10 @@ func (c *AuthConfig) PickServerUserAuth(server *AuthServer, message string, batc
 	return &UserAuth{}, nil
 }
 
+type PrintUserFn func(username string) error
+
 // EditUserAuth Lets the user input/edit the user auth
-func (config *AuthConfig) EditUserAuth(serverLabel string, auth *UserAuth, defaultUserName string, editUser, batchMode bool) error {
+func (config *AuthConfig) EditUserAuth(serverLabel string, auth *UserAuth, defaultUserName string, editUser, batchMode bool, fn PrintUserFn) error {
 	// default the user name if its empty
 	defaultUsername := config.DefaultUsername
 	if defaultUsername == "" {
@@ -230,34 +243,29 @@ func (config *AuthConfig) EditUserAuth(serverLabel string, auth *UserAuth, defau
 
 	if batchMode {
 		if auth.Username == "" {
-			fmt.Errorf("Running in batch mode and no default git username found")
+			return fmt.Errorf("Running in batch mode and no default git username found")
 		}
 		if auth.ApiToken == "" {
-			fmt.Errorf("Running in batch mode and no default api token found")
+			return fmt.Errorf("Running in batch mode and no default api token found")
 		}
 		return nil
 	}
-	var qs = []*survey.Question{}
+	var err error
 
 	if editUser || auth.Username == "" {
-		qs = append(qs, &survey.Question{
-			Name: "username",
-			Prompt: &survey.Input{
-				Message: serverLabel + " user name:",
-				Default: auth.Username,
-			},
-			Validate: survey.Required,
-		})
+		auth.Username, err = util.PickValue(serverLabel+" user name:", auth.Username, true)
+		if err != nil {
+			return err
+		}
 	}
-	qs = append(qs, &survey.Question{
-		Name: "apiToken",
-		Prompt: &survey.Input{
-			Message: "API Token:",
-			Default: auth.ApiToken,
-		},
-		Validate: survey.Required,
-	})
-	return survey.Ask(qs, auth)
+	if fn != nil {
+		err := fn(auth.Username)
+		if err != nil {
+			return err
+		}
+	}
+	auth.ApiToken, err = util.PickPassword("API Token:")
+	return err
 }
 
 func (config *AuthConfig) GetServerNames() []string {
@@ -282,4 +290,42 @@ func (config *AuthConfig) GetServerURLs() []string {
 	}
 	sort.Strings(answer)
 	return answer
+}
+
+// PickOrCreateServer picks the server to use defaulting to the current server
+func (config *AuthConfig) PickOrCreateServer(defaultServerURL string, message string, batchMode bool) (*AuthServer, error) {
+	servers := config.Servers
+	if len(servers) == 1 {
+		return servers[0], nil
+	}
+	if len(servers) == 0 {
+		return config.GetOrCreateServer(defaultServerURL), nil
+	}
+	// lets let the user pick which server to use defaulting to the current server
+	names := []string{}
+	for _, s := range servers {
+		u := s.URL
+		if u != "" {
+			names = append(names, u)
+		}
+	}
+	defaultValue := config.CurrentServer
+	if defaultValue == "" {
+		defaultValue = names[0]
+	}
+	if batchMode {
+		if defaultValue == "" {
+			return nil, fmt.Errorf("No current server defined for git in batch mode")
+		}
+		return config.GetOrCreateServer(defaultValue), nil
+	}
+	name, err := util.PickRequiredNameWithDefault(names, message, defaultValue)
+	if err != nil {
+		return nil, err
+	}
+	if name == "" {
+		return nil, fmt.Errorf("No server URL chosen!")
+	}
+	return config.GetOrCreateServer(name), nil
+
 }

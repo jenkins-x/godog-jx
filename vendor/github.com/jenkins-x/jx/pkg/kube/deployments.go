@@ -69,7 +69,7 @@ func WaitForAllDeploymentsToBeReady(client *kubernetes.Clientset, namespace stri
 	for _, d := range deployList.Items {
 		err = WaitForDeploymentToBeReady(client, d.Name, namespace, timeoutPerDeploy)
 		if err != nil {
-			log.Warnf("deployment %s failed to become ready in namespase %s", d.Name, namespace)
+			log.Warnf("deployment %s failed to become ready in namespace %s", d.Name, namespace)
 		}
 	}
 	return nil
@@ -107,6 +107,14 @@ func WaitForDeploymentToBeReady(client *kubernetes.Clientset, name, namespace st
 		return fmt.Errorf("deployment %s never became ready", name)
 	}
 	return nil
+}
+
+func DeploymentPodCount(client *kubernetes.Clientset, name, namespace string) (int, error) {
+	pods, err := GetDeploymentPods(client, name, namespace)
+	if err == nil {
+		return len(pods), err
+	}
+	return 0, err
 }
 
 func GetDeploymentPods(client *kubernetes.Clientset, name, namespace string) ([]v1.Pod, error) {

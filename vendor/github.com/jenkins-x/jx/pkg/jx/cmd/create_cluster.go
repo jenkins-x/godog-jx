@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -9,9 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
-
-	"errors"
 
 	"github.com/blang/semver"
 	"github.com/jenkins-x/jx/pkg/jx/cmd/log"
@@ -28,33 +28,41 @@ type KubernetesProvider string
 type CreateClusterOptions struct {
 	CreateOptions
 	InstallOptions InstallOptions
-	InitOptions    InitOptions
 	Flags          InitFlags
 	Provider       string
 	NoBrew         bool
 }
 
 const (
-	GKE      = "gke"
-	EKS      = "eks"
-	AKS      = "aks"
-	MINIKUBE = "minikube"
-	JX_INFRA = "jx-infra"
+	GKE        = "gke"
+	EKS        = "eks"
+	AKS        = "aks"
+	AWS        = "aws"
+	MINIKUBE   = "minikube"
+	MINISHIFT  = "minishift"
+	KUBERNETES = "kubernetes"
+	OPENSHIFT  = "openshift"
+	JX_INFRA   = "jx-infra"
+
+	optionKubernetesVersion = "kubernetes-version"
+	optionNodes             = "nodes"
+	optionClusterName       = "cluster-name"
 )
 
-var KUBERNETES_PROVIDERS = []string{MINIKUBE, GKE, AKS, JX_INFRA}
+var KUBERNETES_PROVIDERS = []string{MINIKUBE, GKE, AKS, AWS, EKS, KUBERNETES, OPENSHIFT, MINISHIFT, JX_INFRA}
 
 const (
 	stableKubeCtlVersionURL = "https://storage.googleapis.com/kubernetes-release/release/stable.txt"
 
 	valid_providers = `Valid kubernetes providers include:
 
-    * minikube (single-node Kubernetes cluster inside a VM on your laptop)
-    * gke (Google Container Engine - https://cloud.google.com/kubernetes-engine)
     * aks (Azure Container Service - https://docs.microsoft.com/en-us/azure/aks)
+    * aws (Amazon Web Services via kops - https://github.com/aws-samples/aws-workshop-for-kubernetes/blob/master/readme.adoc)
+    * gke (Google Container Engine - https://cloud.google.com/kubernetes-engine)
+    * kubernetes for custom installations of Kubernetes
+    * minikube (single-node Kubernetes cluster inside a VM on your laptop)
     * coming soon:
-        eks (Amazon Elastic Container Service - https://aws.amazon.com/eks)
-    `
+        eks (Amazon Elastic Container Service - https://aws.amazon.com/eks)    `
 )
 
 type CreateClusterFlags struct {
@@ -64,17 +72,21 @@ var (
 	createClusterLong = templates.LongDesc(`
 		This command creates a new kubernetes cluster, installing required local dependencies and provisions the Jenkins X platform
 
+		You can see a demo of this command here: [http://jenkins-x.io/demos/create_cluster/](http://jenkins-x.io/demos/create_cluster/)
+
 		%s
 
 		Depending on which cloud provider your cluster is created on possible dependencies that will be installed are:
 
 		- kubectl (CLI to interact with kubernetes clusters)
 		- helm (package manager for kubernetes)
-		- draft (CLI that makes it easy to build applications that run on kubernetes)\n
-		- minikube (single-node Kubernetes cluster inside a VM on your laptop )\n
-		- virtualisation drivers (to run minikube in a VM)\n
+		- draft (CLI that makes it easy to build applications that run on kubernetes)
+		- minikube (single-node Kubernetes cluster inside a VM on your laptop )
+		- virtualisation drivers (to run minikube in a VM)
 		- gcloud (Google Cloud CLI)
 		- az (Azure CLI)
+
+		For more documentation see: [http://jenkins-x.io/getting-started/create-cluster/](http://jenkins-x.io/getting-started/create-cluster/)
 
 `)
 
@@ -84,6 +96,14 @@ var (
 
 `)
 )
+
+// KubernetesProviderOptions returns all the kubernetes providers as a string
+func KubernetesProviderOptions() string {
+	values := []string{}
+	values = append(values, KUBERNETES_PROVIDERS...)
+	sort.Strings(values)
+	return strings.Join(values, ", ")
+}
 
 // NewCmdGet creates a command object for the generic "init" action, which
 // installs the dependencies required to run the jenkins-x platform on a kubernetes cluster.
@@ -103,9 +123,10 @@ func NewCmdCreateCluster(f cmdutil.Factory, out io.Writer, errOut io.Writer) *co
 		},
 	}
 
-	cmd.AddCommand(NewCmdCreateClusterMinikube(f, out, errOut))
-	cmd.AddCommand(NewCmdCreateClusterGKE(f, out, errOut))
 	cmd.AddCommand(NewCmdCreateClusterAKS(f, out, errOut))
+	cmd.AddCommand(NewCmdCreateClusterAWS(f, out, errOut))
+	cmd.AddCommand(NewCmdCreateClusterGKE(f, out, errOut))
+	cmd.AddCommand(NewCmdCreateClusterMinikube(f, out, errOut))
 
 	return cmd
 }
@@ -122,29 +143,12 @@ func createCreateClusterOptions(f cmdutil.Factory, out io.Writer, errOut io.Writ
 		},
 		Provider:       cloudProvider,
 		InstallOptions: createInstallOptions(f, out, errOut),
-		InitOptions: InitOptions{
-			CommonOptions: commonOptions,
-			Flags:         InitFlags{},
-		},
 	}
 	return options
 }
 
 func (o *CreateClusterOptions) initAndInstall(provider string) error {
 	// call jx init
-	initOpts := &o.InitOptions
-	initOpts.Flags.Provider = provider
-	initOpts.BatchMode = o.BatchMode
-
-	err := initOpts.Run()
-	if err != nil {
-		return err
-	}
-
-	// share the init domain option with the install options
-	if initOpts.Flags.Domain != "" && o.InstallOptions.Flags.Domain == "" {
-		o.InstallOptions.Flags.Domain = initOpts.Flags.Domain
-	}
 	o.InstallOptions.BatchMode = o.BatchMode
 	o.InstallOptions.Flags.Provider = provider
 
@@ -157,7 +161,7 @@ func (o *CreateClusterOptions) initAndInstall(provider string) error {
 		exposeController.Config.Domain = installOpts.Flags.Domain
 	}
 
-	err = installOpts.Run()
+	err := installOpts.Run()
 	if err != nil {
 		return err
 	}
@@ -173,7 +177,6 @@ func (o *CreateClusterOptions) addCreateClusterFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.NoBrew, "no-brew", "", false, "Disables the use of brew on MacOS to install dependencies like kubectl, draft, helm etc")
 
 	o.InstallOptions.addInstallFlags(cmd, true)
-	o.InitOptions.addInitFlags(cmd)
 }
 
 func (o *CreateClusterOptions) getClusterDependencies(deps []string) []string {
@@ -183,11 +186,6 @@ func (o *CreateClusterOptions) getClusterDependencies(deps []string) []string {
 	}
 
 	d = binaryShouldBeInstalled("helm")
-	if d != "" {
-		deps = append(deps, d)
-	}
-
-	d = binaryShouldBeInstalled("draft")
 	if d != "" {
 		deps = append(deps, d)
 	}
@@ -249,10 +247,10 @@ func (o *CreateClusterOptions) doInstallMissingDependencies(install []string) er
 			err = o.installVirtualBox()
 		case "helm":
 			err = o.installHelm()
-		case "draft":
-			err = o.installDraft()
 		case "gcloud":
 			err = o.installGcloud()
+		case "kops":
+			err = o.installKops()
 		case "minikube":
 			err = o.installMinikube()
 		case "az":
@@ -352,7 +350,7 @@ func (o *CreateClusterOptions) installKubectl() error {
 	if err != nil {
 		return err
 	}
-	err = os.Rename(tmpFile, fullPath)
+	err = util.RenameFile(tmpFile, fullPath)
 	if err != nil {
 		return err
 	}
@@ -485,40 +483,31 @@ func (o *CreateClusterOptions) installHelm() error {
 	return os.Chmod(fullPath, 0755)
 }
 
-func (o *CreateClusterOptions) installDraft() error {
+func (o *CreateClusterOptions) installKops() error {
 	if runtime.GOOS == "darwin" && !o.NoBrew {
-		err := o.runCommand("brew", "tap", "azure/draft")
-		if err != nil {
-			return err
-		}
-		return o.runCommand("brew", "install", "draft")
+		return o.runCommand("brew", "install", "kops")
 	}
-
 	binDir, err := util.BinaryLocation()
 	if err != nil {
 		return err
 	}
-	binary := "draft"
+	binary := "kops"
 	fileName, flag, err := o.shouldInstallBinary(binDir, binary)
 	if err != nil || !flag {
 		return err
 	}
-	latestVersion, err := util.GetLatestVersionFromGitHub("Azure", "draft")
+	latestVersion, err := util.GetLatestVersionFromGitHub("kubernetes", "kops")
 	if err != nil {
 		return err
 	}
-	clientURL := fmt.Sprintf("https://azuredraft.blob.core.windows.net/draft/draft-v%s-%s-%s.tar.gz", latestVersion, runtime.GOOS, runtime.GOARCH)
+	clientURL := fmt.Sprintf("https://github.com/kubernetes/kops/releases/download/%s/kops-%s-%s", latestVersion, runtime.GOOS, runtime.GOARCH)
 	fullPath := filepath.Join(binDir, fileName)
-	tarFile := fullPath + ".tgz"
-	err = o.downloadFile(clientURL, tarFile)
+	tmpFile := fullPath + ".tmp"
+	err = o.downloadFile(clientURL, tmpFile)
 	if err != nil {
 		return err
 	}
-	err = util.UnTargz(tarFile, binDir, []string{binary, fileName})
-	if err != nil {
-		return err
-	}
-	err = os.Remove(tarFile)
+	err = util.RenameFile(tmpFile, fullPath)
 	if err != nil {
 		return err
 	}
@@ -549,7 +538,7 @@ func (o *CreateClusterOptions) installMinikube() error {
 	if err != nil {
 		return err
 	}
-	err = os.Rename(tmpFile, fullPath)
+	err = util.RenameFile(tmpFile, fullPath)
 	if err != nil {
 		return err
 	}

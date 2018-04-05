@@ -16,7 +16,7 @@ import (
 
 func GetJenkinsClient(url string, batch bool, configService *jenkauth.AuthConfigService) (*gojenkins.Jenkins, error) {
 	if url == "" {
-		return nil, errors.New("no JENKINS_URL environment variable is set nor could a Jenkins service be found in the current namespace!\n")
+		return nil, errors.New("no Jenkins service be found in the development namespace!\nAre you sure you installed Jenkins X? Try: http://jenkins-x.io/getting-started/")
 	}
 	tokenUrl := JenkinsTokenURL(url)
 
@@ -99,13 +99,18 @@ func JenkinsTokenURL(url string) string {
 }
 
 func EditUserAuth(url string, configService *jenkauth.AuthConfigService, config *jenkauth.AuthConfig, auth *jenkauth.UserAuth, tokenUrl string, batchMode bool) (jenkauth.UserAuth, error) {
+
 	fmt.Printf("\nTo be able to connect to the Jenkins server we need a username and API Token\n\n")
-	fmt.Printf("Please go to %s and click %s to get your API Token\n", util.ColorInfo(tokenUrl), util.ColorInfo("Show API Token"))
-	fmt.Printf("Then COPY the API token so that you can paste it into the form below:\n\n")
+
+	f := func(username string) error {
+		fmt.Printf("\nPlease go to %s and click %s to get your API Token\n", util.ColorInfo(tokenUrl), util.ColorInfo("Show API Token"))
+		fmt.Printf("Then COPY the API token so that you can paste it into the form below:\n\n")
+		return nil
+	}
 
 	defaultUsername := "admin"
 
-	err := config.EditUserAuth("Jenkins", auth, defaultUsername, true, batchMode)
+	err := config.EditUserAuth("Jenkins", auth, defaultUsername, true, batchMode, f)
 	if err != nil {
 		return *auth, err
 	}

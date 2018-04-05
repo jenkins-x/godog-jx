@@ -12,12 +12,13 @@ import (
 )
 
 type PipelineActivityKey struct {
-	Name         string
-	Pipeline     string
-	Build        string
-	BuildURL     string
-	BuildLogsURL string
-	GitInfo      *gits.GitRepositoryInfo
+	Name            string
+	Pipeline        string
+	Build           string
+	BuildURL        string
+	BuildLogsURL    string
+	ReleaseNotesURL string
+	GitInfo         *gits.GitRepositoryInfo
 }
 
 func (k *PipelineActivityKey) IsValid() bool {
@@ -27,7 +28,8 @@ func (k *PipelineActivityKey) IsValid() bool {
 type PromoteStepActivityKey struct {
 	PipelineActivityKey
 
-	Environment string
+	Environment    string
+	ApplicationURL string
 }
 
 type PromotePullRequestFn func(*v1.PipelineActivity, *v1.PipelineActivityStep, *v1.PromoteActivityStep, *v1.PromotePullRequestStep) error
@@ -64,6 +66,9 @@ func (k *PipelineActivityKey) GetOrCreate(activities typev1.PipelineActivityInte
 	}
 	if k.BuildLogsURL != "" && spec.BuildLogsURL == "" {
 		spec.BuildLogsURL = k.BuildLogsURL
+	}
+	if k.ReleaseNotesURL != "" && spec.ReleaseNotesURL == "" {
+		spec.ReleaseNotesURL = k.ReleaseNotesURL
 	}
 	gi := k.GitInfo
 	if gi != nil {
@@ -217,9 +222,15 @@ func (k *PromoteStepActivityKey) OnPromoteUpdate(activities typev1.PipelineActiv
 		return err
 	}
 	p1 := *p
+	if k.ApplicationURL != "" {
+		ps.ApplicationURL = k.ApplicationURL
+	}
 	err = fn(a, s, ps, p)
 	if err != nil {
 		return err
+	}
+	if k.ApplicationURL != "" {
+		ps.ApplicationURL = k.ApplicationURL
 	}
 	p2 := *p
 

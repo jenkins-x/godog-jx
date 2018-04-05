@@ -20,6 +20,7 @@ type VersionOptions struct {
 
 	Container string
 	Namespace string
+	HelmTLS   bool
 }
 
 func NewCmdVersion(f cmdutil.Factory, out io.Writer, errOut io.Writer) *cobra.Command {
@@ -46,6 +47,7 @@ func NewCmdVersion(f cmdutil.Factory, out io.Writer, errOut io.Writer) *cobra.Co
 		cmd.Flags().BoolP("short", "", false, "Print just the version number.")
 	*/
 	cmd.Flags().MarkShorthandDeprecated("client", "please use --client instead.")
+	cmd.Flags().BoolVarP(&options.HelmTLS, "helm-tls", "", false, "Whether to use TLS with helm")
 	return cmd
 }
 
@@ -88,7 +90,11 @@ func (o *VersionOptions) Run() error {
 	}
 
 	// helm version
-	output, err = o.getCommandOutput("", "helm", "version", "--short")
+	args := []string{"version", "--short"}
+	if o.HelmTLS {
+		args = append(args, "--tls")
+	}
+	output, err = o.getCommandOutput("", "helm", args...)
 	if err != nil {
 		o.warnf("Failed to get helm version: %s\n", err)
 	} else {
@@ -108,29 +114,27 @@ func (o *VersionOptions) Run() error {
 		}
 	}
 
-	// draft version
-	output, err = o.getCommandOutput("", "draft", "version")
+	// kubectl version
+	output, err = o.getCommandOutput("", "kubectl", "version", "--short")
 	if err != nil {
-		o.warnf("Failed to find draft version: %s\n", err)
-		if output != "" {
-			o.warnf("%s\n", output)
-		}
+		o.warnf("Failed to get kubectl version: %s\n", err)
 	} else {
 		for i, line := range strings.Split(output, "\n") {
 			fields := strings.Fields(line)
 			if len(fields) > 1 {
-				v := extractSemVer(fields[1])
+				v := fields[2]
 				if v != "" {
 					switch i {
 					case 0:
-						table.AddRow("Draft Client", info(v))
+						table.AddRow("Kubectl Client", info(v))
 					case 1:
-						table.AddRow("Draft Server", info(v))
+						// Ignore K8S server details as we have these above
 					}
 				}
 			}
 		}
 	}
+
 	// git version
 	output, err = o.getCommandOutput("", "git", "version")
 	if err != nil {
