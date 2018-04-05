@@ -43,17 +43,21 @@ func (o *CommonTest) TheApplicationShouldBeBuiltAndPromotedViaCICD() error {
 	if server == nil {
 		return fmt.Errorf("Could not find a git auth user for git server URL %s", gitURL)
 	}
-	userName := server.CurrentUser
-	if userName == "" {
-		if len(server.Users) == 0 {
-			return fmt.Errorf("No users are configured for authentication with git server URL %s", gitURL)
+	owner := o.GetGitOrganisation()
+	if owner == "" {
+		userName := server.CurrentUser
+		if userName == "" {
+			if len(server.Users) == 0 {
+				return fmt.Errorf("No users are configured for authentication with git server URL %s", gitURL)
+			}
+			userName = server.Users[0].Username
 		}
-		userName = server.Users[0].Username
+		if userName == "" {
+			return fmt.Errorf("Could not detect username for git server URL %s", gitURL)
+		}
+		owner = userName
 	}
-	if userName == "" {
-		return fmt.Errorf("Could not detect username for git server URL %s", gitURL)
-	}
-	jobName := userName + "/" + appName + "/master"
+	jobName := owner + "/" + appName + "/master"
 	if o.JenkinsClient == nil {
 		client, err := f.CreateJenkinsClient()
 		if err != nil {
