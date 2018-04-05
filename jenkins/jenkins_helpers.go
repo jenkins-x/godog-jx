@@ -13,7 +13,7 @@ import (
 const (
 	maxWaitForBuildToStart     = 20 * time.Second
 	maxWaitForBuildToBeCreated = 50 * time.Second
-	maxWaitForBuildToComplete  = 40 * time.Minute
+	maxWaitForBuildToComplete  = 200 * time.Minute
 )
 
 var jenkinsLogPrefix = utils.Color("\x1b[36m") + "        "
