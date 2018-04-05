@@ -49,7 +49,7 @@ func (o *springTest) runningInThatDirectory(commandLine string) error {
 		return err
 	}
 	fmt.Printf("Using git provider URL %s and work directory %s\n", util.ColorInfo(gitProviderURL), util.ColorInfo(o.WorkDir))
-	remaining := append(args[1:], "-b", "--git-provider-url", gitProviderURL)
+	remaining := append(args[1:], "-b", "--git-provider-url", gitProviderURL, "--org", o.GetGitOrganisation())
 	if len(o.Args) > 0 {
 		remaining = append(remaining, o.Args...)
 	}

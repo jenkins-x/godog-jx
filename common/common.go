@@ -19,6 +19,7 @@ type CommonTest struct {
 	Errors        *utils.ErrorSlice
 	WorkDir       string
 	AppName       string
+	Organisation  string
 }
 
 // TheApplicationShouldBeBuiltAndPromotedViaCICD asserts that the project
@@ -131,4 +132,16 @@ func (o *CommonTest) GitProviderURL() (string, error) {
 		return "", fmt.Errorf("No servers in the ~/.jx/gitAuth.yaml file!")
 	}
 	return servers[0].URL, nil
+}
+
+// GetGitOrganisation returns the git organisation to create new projects inside
+func (o* CommonTest) GetGitOrganisation() string {
+	org := o.Organisation
+	if org == "" {
+		org = os.Getenv("GIT_ORGANISATION")
+	}
+	if org == "" {
+		org = "jenkins-x-tests"
+	}
+	return org
 }

@@ -79,7 +79,7 @@ configure-ghe:
 	jx delete git server GitHub
 	jx create git token -n GHE $(GHE_USER) -t $(GHE_TOKEN)
 
-bdd-tests: jx-import jx-spring
+bdd-tests: jx-spring
 
 fmt:
 	@FORMATTED=`$(GO) fmt $(PACKAGE_DIRS)`

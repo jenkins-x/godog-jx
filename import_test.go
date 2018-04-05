@@ -59,7 +59,7 @@ func (o *importTest) runningInThatDirectory(commandLine string) error {
 		return err
 	}
 	fmt.Printf("Using git provider URL %s\n", util.ColorInfo(gitProviderURL))
-	remaining := append(args[1:], "-b", "--git-provider-url", gitProviderURL)
+	remaining := append(args[1:], "-b", "--git-provider-url", gitProviderURL, "--org", o.GetGitOrganisation())
 	if len(o.Args) > 0 {
 		remaining = append(remaining, o.Args...)
 	}
