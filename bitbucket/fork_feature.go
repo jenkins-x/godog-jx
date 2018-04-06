@@ -43,6 +43,7 @@ func (f *ForkFeature) iForkTheBitbucketRepoToTheCurrentUser(originalRepoName str
 		return err
 	}
 	gitcmder := f.GitCommander
+	gitcmder.UseHttps = true
 
 	upstreamRepo, err := GetRepository(provider, userRepo.Organisation, userRepo.Repository)
 	if err != nil {

@@ -63,6 +63,8 @@ func (g *GitCommander) CloneFromURL(repo *gits.GitRepository, cloneURL string) (
 		return outDir, err
 	}
 
+	cloneURL = strings.TrimSuffix(cloneURL, "/")
+	cloneURL += ".git"
 	err = runCommand(runDir, "git", "clone", cloneURL)
 	return outDir, err
 }

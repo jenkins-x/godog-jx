@@ -127,7 +127,7 @@ func IsUser(client *bitbucket.APIClient, name string) (bool, error) {
 func GetCloneURL(repo *gits.GitRepository, useHttps bool) (string, error) {
 	cloneUrl := repo.SSHURL
 	if useHttps {
-		cloneUrl = repo.CloneURL
+		cloneUrl = repo.HTMLURL
 		if cloneUrl == "" {
 			return "", fmt.Errorf("Git repository does not have a clone URL: %v", repo)
 		}
