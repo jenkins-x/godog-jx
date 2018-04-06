@@ -26,6 +26,20 @@ func FileExists(path string) (bool, error) {
 	return true, err
 }
 
+func IsEmpty(name string) (bool, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	_, err = f.Readdirnames(1) // Or f.Readdir(1)
+	if err == io.EOF {
+		return true, nil
+	}
+	return false, err // Either not empty or error, suits both cases
+}
+
 // CreateUniqueDirectory creates a new directory but if the combination of dir and name exists
 // then append a number until a unique name is found
 func CreateUniqueDirectory(dir string, name string, maximumAttempts int) (string, error) {
@@ -48,6 +62,29 @@ func CreateUniqueDirectory(dir string, name string, maximumAttempts int) (string
 		}
 	}
 	return "", fmt.Errorf("Could not create a unique file in %s starting with %s after %d attempts", dir, name, maximumAttempts)
+}
+func RenameDir(src string, dst string, force bool) (err error) {
+	err = CopyDir(src, dst, force)
+	if err != nil {
+		return fmt.Errorf("failed to copy source dir %s to %s: %s", src, dst, err)
+	}
+	err = os.RemoveAll(src)
+	if err != nil {
+		return fmt.Errorf("failed to cleanup source dir %s: %s", src, err)
+	}
+	return nil
+}
+
+func RenameFile(src string, dst string) (err error) {
+	err = CopyFile(src, dst)
+	if err != nil {
+		return fmt.Errorf("failed to copy source file %s to %s: %s", src, dst, err)
+	}
+	err = os.RemoveAll(src)
+	if err != nil {
+		return fmt.Errorf("failed to cleanup source file %s: %s", src, err)
+	}
+	return nil
 }
 
 // credit https://gist.github.com/r0l1/92462b38df26839a3ca324697c8cba04
@@ -148,4 +185,14 @@ func CopyFile(src, dst string) (err error) {
 	}
 
 	return
+}
+
+// loads a file
+func LoadBytes(dir, name string) ([]byte, error) {
+	path := filepath.Join(dir, name) // relative path
+	bytes, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("error loading file %s in directory %s, %v", name, dir, err)
+	}
+	return bytes, nil
 }

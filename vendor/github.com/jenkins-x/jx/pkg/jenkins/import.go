@@ -11,8 +11,8 @@ import (
 	"github.com/jenkins-x/jx/pkg/util"
 )
 
-// ImportProject imports a MultiBranchProject into Jeknins for the given git URL
-func ImportProject(out io.Writer, jenk *gojenkins.Jenkins, gitURL string, dir string, jenkinsfile string, branchPattern, credentials string, failIfExists bool, gitProvider gits.GitProvider, authConfigSvc auth.AuthConfigService) error {
+// ImportProject imports a MultiBranchProject into Jenkins for the given git URL
+func ImportProject(out io.Writer, jenk *gojenkins.Jenkins, gitURL string, dir string, jenkinsfile string, branchPattern, credentials string, failIfExists bool, gitProvider gits.GitProvider, authConfigSvc auth.AuthConfigService, isEnvironment bool, batchMode bool) error {
 	if gitURL == "" {
 		return fmt.Errorf("No Git repository URL found!")
 	}
@@ -44,21 +44,43 @@ func ImportProject(out io.Writer, jenk *gojenkins.Jenkins, gitURL string, dir st
 	}
 
 	if credentials == "" {
+		/*
+				TODO if we use git kind specific credentials then we'll have to edit the Jenkinsfile too...
+
+			kind := gitProvider.Kind()
+			if kind == "" {
+				kind = "git"
+			}
+			credentials = DefaultJenkinsCredentialsPrefix + strings.ToLower(kind)
+		*/
 		credentials = DefaultJenkinsCredentialsPrefix + "git"
 	}
 	_, err = jenk.GetCredential(credentials)
 	if err != nil {
 		config := authConfigSvc.Config()
-		server := config.GetOrCreateServer(gitInfo.Host)
-		user, err := config.PickServerUserAuth(server, "user name for the Jenkins Pipeline", false)
+		u := gitInfo.HostURL()
+		server := config.GetOrCreateServer(u)
+		if len(server.Users) == 0 {
+			// lets check if the host was used in `~/.jx/gitAuth.yaml` instead of URL
+			s2 := config.GetOrCreateServer(gitInfo.Host)
+			if s2 != nil && len(s2.Users) > 0 {
+				server = s2
+				u = gitInfo.Host
+			}
+		}
+		user, err := config.PickServerUserAuth(server, "user name for the Jenkins Pipeline", batchMode)
 		if err != nil {
 			return err
+		}
+		if user.Username == "" {
+			return fmt.Errorf("Could find a username for git server %s", u)
 		}
 		err = jenk.CreateCredential(credentials, user.Username, user.ApiToken)
 
 		if err != nil {
 			return fmt.Errorf("error creating jenkins credential %s at %s %v", credentials, jenk.BaseURL(), err)
 		}
+		fmt.Fprintf(out, "Created credential %s for host %s user %s\n", util.ColorInfo(credentials), util.ColorInfo(u), util.ColorInfo(user.Username))
 	}
 
 	org := gitInfo.Organisation
@@ -99,11 +121,25 @@ func ImportProject(out io.Writer, jenk *gojenkins.Jenkins, gitURL string, dir st
 			return fmt.Errorf("Failed to find the MultiBranchProject job %s in folder %s due to: %s", jobName, org, err)
 		}
 		fmt.Fprintf(out, "Created Jenkins Project: %s\n", util.ColorInfo(job.Url))
+		fmt.Fprintln(out)
+		if !isEnvironment {
+			fmt.Fprintf(out, "Watch pipeline activity via:    %s\n", util.ColorInfo(fmt.Sprintf("jx get activity -f %s -w", gitInfo.Name)))
+			fmt.Fprintf(out, "Browse the pipeline log via:    %s\n", util.ColorInfo(fmt.Sprintf("jx get build logs %s", gitInfo.PipelinePath())))
+			fmt.Fprintf(out, "Open the Jenkins console via    %s\n", util.ColorInfo("jx console"))
+			fmt.Fprintf(out, "You can list the pipelines via: %s\n", util.ColorInfo("jx get pipelines"))
+			fmt.Fprintf(out, "When the pipeline is complete:  %s\n", util.ColorInfo("jx get applications"))
+			fmt.Fprintln(out)
+			fmt.Fprintf(out, "For more help on available commands see: %s\n", util.ColorInfo("http://jenkins-x.io/developing/browsing/"))
+			fmt.Fprintln(out)
+		}
+		fmt.Fprintf(out, util.ColorStatus("Note that your first pipeline may take a few minutes to start while the necessary docker images get downloaded!\n\n"))
+
 		params := url.Values{}
 		err = jenk.Build(job, params)
 		if err != nil {
 			return fmt.Errorf("Failed to trigger job %s due to %s", job.Url, err)
 		}
+
 	}
 
 	// register the webhook

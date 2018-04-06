@@ -1,5 +1,5 @@
 hash: beea4415cf3c8d06f89965b6579a4461746a73f7e6098d710c8076cf9ebc71e5
-updated: 2018-03-06T09:07:19.446238Z
+updated: 2018-04-05T17:38:12.446154481-04:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -7,7 +7,7 @@ imports:
   - compute/metadata
   - internal
 - name: code.gitea.io/sdk
-  version: fa91af7569e6ba34bfa382109847cbc79c3fdad8
+  version: 417abc7c5dcf7d0967f41a2419f3a6445a069232
   subpackages:
   - gitea
 - name: github.com/Azure/go-autorest
@@ -22,7 +22,7 @@ imports:
 - name: github.com/cucumber/gherkin-go
   version: b4fe8f6d1dc26a0b1fb8e677244aa8f775a944f3
 - name: github.com/DATA-DOG/godog
-  version: f9aabcdc5814beeba3111b7a7931f9acc57a7bbc
+  version: 943635096a91d89d87b4bb07c395d96843a27c2f
   subpackages:
   - colors
   - gherkin
@@ -39,7 +39,7 @@ imports:
 - name: github.com/fatih/color
   version: 570b54cabe6b8eb0bc2dfce68d964677d63b5260
 - name: github.com/ghodss/yaml
-  version: 73d445a93680fa1a78ae23a5839bad48f32ba1ee
+  version: 0ca9ea5df5451ffdf184b4428c902747c2c11cd7
 - name: github.com/go-openapi/jsonpointer
   version: 46af16f9f7b149af66e5d1bd010e3574dc06de98
 - name: github.com/go-openapi/jsonreference
@@ -66,7 +66,7 @@ imports:
 - name: github.com/google/btree
   version: 7d79101e329e5a3adf994758c578dab82b90c017
 - name: github.com/google/go-github
-  version: e7bb4b8ce29fb7beaf0765acda602bc516a56dd5
+  version: 88eb4e9dc91cb2db1bbc56c936f1ee39bbe72ba5
   subpackages:
   - github
 - name: github.com/google/go-querystring
@@ -94,16 +94,22 @@ imports:
   version: 787624de3eb7bd915c329cba748687a3b22666a6
   subpackages:
   - diskcache
+- name: github.com/hashicorp/golang-lru
+  version: a0d98a5f288019575c6d1f4bb1573fef2d1fcdc4
+  subpackages:
+  - simplelru
 - name: github.com/howeyc/gopass
   version: bf9dde6d0d2c004a008c27aaee91170c786f6db8
 - name: github.com/imdario/mergo
   version: 7fe0c75c13abdee74b09fcacef5ea1c6bba6a874
 - name: github.com/inconshreveable/mousetrap
   version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
+- name: github.com/Jeffail/gabs
+  version: 44cbc27138518b15305cb3eef220d04f2d641b9b
 - name: github.com/jenkins-x/golang-jenkins
   version: ec7a97e4a0d7bfebfacb5818e70b77744d9f4d6d
 - name: github.com/jenkins-x/jx
-  version: 35f6ae69b2ec100b193b7e60c98c4d36aa4662ad
+  version: bece3d60953aeaae792fe05de94f2d3ecb099346
   subpackages:
   - pkg/apis/jenkins.io
   - pkg/apis/jenkins.io/v1
@@ -138,7 +144,7 @@ imports:
 - name: github.com/mgutz/ansi
   version: 9520e82c474b0a04dd04f8a40959027271bab992
 - name: github.com/Pallinder/go-randomdata
-  version: 442d37d9dbc782dbd737af9ec575d8858b79261b
+  version: dab270d296c6c8fb98de3b4334bbd7d7b0ceca53
 - name: github.com/peterbourgon/diskv
   version: 5f041e8faa004a95c88a202771f4cc3e991971e6
 - name: github.com/pmezard/go-difflib
@@ -150,9 +156,9 @@ imports:
 - name: github.com/PuerkitoBio/urlesc
   version: 5bd2802263f21d8788851d5305584c82a5c75d7e
 - name: github.com/spf13/cobra
-  version: c6c44e6fdcc30161c7f4480754da7230d01c06e3
+  version: 4dab30cb33e6633c33c787106bafbfbfdde7842d
 - name: github.com/spf13/pflag
-  version: 4c012f6dcd9546820e378d0bdda4d8fc772cdfea
+  version: 1cd4a0c365d95803411bec89fb7b76bade17053b
 - name: github.com/src-d/gcfg
   version: f187355171c936ac84a82793659ebb4936bc1c23
   subpackages:
@@ -163,6 +169,10 @@ imports:
   version: 12b6f73e6084dad08a7c6e575284b177ecafbc71
   subpackages:
   - assert
+- name: github.com/wbrefvem/go-bitbucket
+  version: 6946f648c6394941a5303f92eed807e0f6366e15
+- name: github.com/xanzy/go-gitlab
+  version: 3109bb13e379d3ada1ff1ca81557c6e7bce8e881
 - name: golang.org/x/crypto
   version: 81e90905daefcd6fd217b62423c0908922eadb30
   subpackages:
@@ -172,13 +182,10 @@ imports:
   subpackages:
   - context
   - context/ctxhttp
-  - html
-  - html/atom
   - http2
   - http2/hpack
   - idna
   - lex/httplex
-  - websocket
 - name: golang.org/x/oauth2
   version: a6bd8cefa1811bd24b86f8902872e4e8225f74c4
   subpackages:
@@ -206,7 +213,7 @@ imports:
   - unicode/norm
   - width
 - name: google.golang.org/appengine
-  version: 5bee14b453b4c71be47ec1781b0fa61c2ea182db
+  version: ad39d7fab7c60b2493fdc318c3d2cdb2128f92a4
   subpackages:
   - internal
   - internal/app_identity
@@ -218,7 +225,7 @@ imports:
   - internal/urlfetch
   - urlfetch
 - name: gopkg.in/AlecAivazis/survey.v1
-  version: 9f89d9dd66613216993dc300f9f3dbae9c3c9bda
+  version: 9d3458c219bae9653d267883634bdb5375281fd8
   subpackages:
   - core
   - terminal
@@ -267,7 +274,7 @@ imports:
   - storage/v1alpha1
   - storage/v1beta1
 - name: k8s.io/apiextensions-apiserver
-  version: 26684740acb1ce41d0faa4603f5d7224aa1085cf
+  version: 76b8134f2082ae81f4989c709be17587745ef0c0
   subpackages:
   - pkg/apis/apiextensions
   - pkg/apis/apiextensions/v1beta1
@@ -280,6 +287,7 @@ imports:
   - pkg/api/errors
   - pkg/api/meta
   - pkg/api/resource
+  - pkg/apis/meta/internalversion
   - pkg/apis/meta/v1
   - pkg/apis/meta/v1/unstructured
   - pkg/apis/meta/v1alpha1
@@ -297,7 +305,9 @@ imports:
   - pkg/runtime/serializer/versioning
   - pkg/selection
   - pkg/types
+  - pkg/util/cache
   - pkg/util/clock
+  - pkg/util/diff
   - pkg/util/errors
   - pkg/util/framer
   - pkg/util/intstr
@@ -356,13 +366,16 @@ imports:
   - rest/watch
   - third_party/forked/golang/template
   - tools/auth
+  - tools/cache
   - tools/clientcmd
   - tools/clientcmd/api
   - tools/clientcmd/api/latest
   - tools/clientcmd/api/v1
   - tools/metrics
+  - tools/pager
   - tools/reference
   - transport
+  - util/buffer
   - util/cert
   - util/flowcontrol
   - util/homedir
@@ -374,7 +387,7 @@ imports:
   - pkg/common
   - pkg/util/proto
 - name: k8s.io/metrics
-  version: 9de7b8b42ee02a196dd1822988718c6574732901
+  version: 4cc74194f563d1ac90a61b654083a4da01c1ae61
   subpackages:
   - pkg/apis/metrics
   - pkg/apis/metrics/v1alpha1

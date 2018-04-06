@@ -2,6 +2,7 @@ package gits
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -186,7 +187,8 @@ func (p *GiteaProvider) CreateWebHook(data *GitWebHookArguments) error {
 	hook := gitea.CreateHookOption{
 		Type:   "gitea",
 		Config: config,
-		Events: []string{"*"},
+		Events: []string{"create", "push", "pull_request"},
+		Active: true,
 	}
 	fmt.Printf("Creating github webhook for %s/%s for url %s\n", owner, repo, webhookUrl)
 	_, err = p.Client.CreateRepoHook(owner, repo, hook)
@@ -220,7 +222,7 @@ func (p *GiteaProvider) CreatePullRequest(data *GitPullRequestArguments) (*GitPu
 	if err != nil {
 		return nil, err
 	}
-	id := int(pr.ID)
+	id := int(pr.Index)
 	answer := &GitPullRequest{
 		URL:    pr.HTMLURL,
 		Number: &id,
@@ -240,7 +242,7 @@ func (p *GiteaProvider) UpdatePullRequestStatus(pr *GitPullRequest) error {
 	n := *pr.Number
 	result, err := p.Client.GetPullRequest(pr.Owner, pr.Repo, int64(n))
 	if err != nil {
-		return err
+		return fmt.Errorf("Could not find pull request for %s/%s #%d: %s", pr.Owner, pr.Repo, n, err)
 	}
 	merged := result.HasMerged
 	pr.Merged = &merged
@@ -268,16 +270,51 @@ func (p *GiteaProvider) UpdatePullRequestStatus(pr *GitPullRequest) error {
 
 func (p *GiteaProvider) GetIssue(org string, name string, number int) (*GitIssue, error) {
 	i, err := p.Client.GetIssue(org, name, int64(number))
-	if strings.Contains(err.Error(), "404") {
-		return nil, nil
-	}
 	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			return nil, nil
+		}
 		return nil, err
 	}
-	return p.fromGiteaIssue(i)
+	return p.fromGiteaIssue(org, name, i)
 }
 
-func (p *GiteaProvider) fromGiteaIssue(i *gitea.Issue) (*GitIssue, error) {
+func (p *GiteaProvider) IssueURL(org string, name string, number int, isPull bool) string {
+	serverPrefix := p.Server.URL
+	if strings.Index(serverPrefix, "://") < 0 {
+		serverPrefix = "https://" + serverPrefix
+	}
+	path := "issues"
+	if isPull {
+		path = "pull"
+	}
+	url := util.UrlJoin(serverPrefix, org, name, path, strconv.Itoa(number))
+	return url
+}
+
+func (p *GiteaProvider) SearchIssues(org string, name string, filter string) ([]*GitIssue, error) {
+	opts := gitea.ListIssueOption{}
+	answer := []*GitIssue{}
+	issues, err := p.Client.ListRepoIssues(org, name, opts)
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			return answer, nil
+		}
+		return answer, err
+	}
+	for _, issue := range issues {
+		i, err := p.fromGiteaIssue(org, name, issue)
+		if err != nil {
+			return answer, err
+		}
+
+		// TODO apply the filter?
+		answer = append(answer, i)
+	}
+	return answer, nil
+}
+
+func (p *GiteaProvider) fromGiteaIssue(org string, name string, i *gitea.Issue) (*GitIssue, error) {
 	state := string(i.State)
 	labels := []GitLabel{}
 	for _, label := range i.Labels {
@@ -291,7 +328,7 @@ func (p *GiteaProvider) fromGiteaIssue(i *gitea.Issue) (*GitIssue, error) {
 	number := int(i.ID)
 	return &GitIssue{
 		Number:        &number,
-		URL:           i.URL,
+		URL:           p.IssueURL(org, name, number, false),
 		State:         &state,
 		Title:         i.Title,
 		Body:          i.Body,
@@ -311,7 +348,7 @@ func (p *GiteaProvider) CreateIssue(owner string, repo string, issue *GitIssue) 
 	if err != nil {
 		return nil, err
 	}
-	return p.fromGiteaIssue(i)
+	return p.fromGiteaIssue(owner, repo, i)
 }
 
 func toGiteaLabel(label *gitea.Label) GitLabel {
@@ -456,7 +493,13 @@ func (p *GiteaProvider) UpdateRelease(owner string, repo string, tag string, rel
 		if editRelease.Note == "" && releaseInfo.Body != "" {
 			editRelease.Note = releaseInfo.Body
 		}
-		_, err = p.Client.EditRelease(owner, repo, release.ID, editRelease)
+		r2, err := p.Client.EditRelease(owner, repo, release.ID, editRelease)
+		if err != nil {
+			return err
+		}
+		if r2 != nil {
+			releaseInfo.URL = r2.URL
+		}
 	}
 	return err
 }
@@ -469,8 +512,16 @@ func (p *GiteaProvider) IsGitHub() bool {
 	return false
 }
 
+func (p *GiteaProvider) IsGitea() bool {
+	return true
+}
+
+func (p *GiteaProvider) Kind() string {
+	return "gitea"
+}
+
 func (p *GiteaProvider) JenkinsWebHookPath(gitURL string, secret string) string {
-	return "/generic-webhook-trigger/invoke"
+	return "/gitea-webhook/post"
 }
 
 func GiteaAccessTokenURL(url string) string {
@@ -479,4 +530,8 @@ func GiteaAccessTokenURL(url string) string {
 
 func (p *GiteaProvider) Label() string {
 	return p.Server.Label()
+}
+
+func (p *GiteaProvider) ServerURL() string {
+	return p.Server.URL
 }

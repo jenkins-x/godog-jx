@@ -37,8 +37,37 @@ func NewGitHubProvider(server *auth.AuthServer, user *auth.UserAuth) (GitProvide
 	)
 	tc := oauth2.NewClient(ctx, ts)
 
-	provider.Client = github.NewClient(tc)
-	return &provider, nil
+	var err error
+	u := server.URL
+	if IsGitHubServerURL(u) {
+		provider.Client = github.NewClient(tc)
+	} else {
+		u = GitHubEnterpriseApiEndpointURL(u)
+		provider.Client, err = github.NewEnterpriseClient(u, u, tc)
+	}
+	return &provider, err
+}
+
+func GitHubEnterpriseApiEndpointURL(u string) string {
+	// lets ensure we use the API endpoint to login
+	if strings.Index(u, "/api/") < 0 {
+		u = util.UrlJoin(u, "/api/v3/")
+	}
+	return u
+}
+
+// GetEnterpriseApiURL returns the github enterprise API URL or blank if this
+// provider is for the https://github.com service
+func (p *GitHubProvider) GetEnterpriseApiURL() string {
+	u := p.Server.URL
+	if IsGitHubServerURL(u) {
+		return ""
+	}
+	return GitHubEnterpriseApiEndpointURL(u)
+}
+
+func IsGitHubServerURL(u string) bool {
+	return u == "" || strings.HasPrefix(u, "https://github.com") || strings.HasPrefix(u, "github")
 }
 
 func (p *GitHubProvider) ListOrganisations() ([]GitOrganisation, error) {
@@ -140,6 +169,7 @@ func toGitHubRepo(name string, repo *github.Repository) *GitRepository {
 		HTMLURL:          asText(repo.HTMLURL),
 		SSHURL:           asText(repo.SSHURL),
 		Fork:             asBool(repo.Fork),
+		Language:         asText(repo.Language),
 	}
 }
 
@@ -203,7 +233,7 @@ func (p *GitHubProvider) CreateWebHook(data *GitWebHookArguments) error {
 	}
 	hooks, _, err := p.Client.Repositories.ListHooks(p.Context, owner, repo, nil)
 	if err != nil {
-		return err
+		fmt.Printf("Error querying webhooks on %s/%s: %s\n", owner, repo, err)
 	}
 	for _, hook := range hooks {
 		c := hook.Config["url"]
@@ -438,6 +468,20 @@ func (p *GitHubProvider) UpdateRelease(owner string, repo string, tag string, re
 	release := &github.RepositoryRelease{}
 	rel, r, err := p.Client.Repositories.GetReleaseByTag(p.Context, owner, repo, tag)
 
+	if r.StatusCode == 404 && !strings.HasPrefix(tag, "v") {
+		// sometimes we prepend a v for example when using gh-release
+		// so lets make sure we don't create a double release
+		vtag := "v" + tag
+
+		rel2, r2, err2 := p.Client.Repositories.GetReleaseByTag(p.Context, owner, repo, vtag)
+		if r2.StatusCode != 404 {
+			rel = rel2
+			r = r2
+			err = err2
+			tag = vtag
+		}
+	}
+
 	if r != nil && err == nil {
 		release = rel
 	}
@@ -452,6 +496,7 @@ func (p *GitHubProvider) UpdateRelease(owner string, repo string, tag string, re
 		release.Body = &releaseInfo.Body
 	}
 	if r.StatusCode == 404 {
+		fmt.Printf("No release found for %s/%s and tag %s so creating a new release\n", owner, repo, tag)
 		_, _, err = p.Client.Repositories.CreateRelease(p.Context, owner, repo, release)
 		return err
 	}
@@ -459,7 +504,11 @@ func (p *GitHubProvider) UpdateRelease(owner string, repo string, tag string, re
 	if id == nil {
 		return fmt.Errorf("The release for %s/%s tag %s has no ID!", owner, repo, tag)
 	}
-	_, _, err = p.Client.Repositories.EditRelease(p.Context, owner, repo, *id, release)
+	r2, _, err := p.Client.Repositories.EditRelease(p.Context, owner, repo, *id, release)
+	if r != nil {
+		releaseInfo.URL = asText(r2.URL)
+		releaseInfo.HTMLURL = asText(r2.HTMLURL)
+	}
 	return err
 }
 
@@ -472,6 +521,31 @@ func (p *GitHubProvider) GetIssue(org string, name string, number int) (*GitIssu
 		return nil, err
 	}
 	return p.fromGithubIssue(org, name, number, i)
+}
+
+func (p *GitHubProvider) SearchIssues(org string, name string, filter string) ([]*GitIssue, error) {
+	opts := &github.IssueListByRepoOptions{}
+	answer := []*GitIssue{}
+	issues, r, err := p.Client.Issues.ListByRepo(p.Context, org, name, opts)
+	if r.StatusCode == 404 {
+		return answer, nil
+	}
+	if err != nil {
+		return answer, err
+	}
+	for _, issue := range issues {
+		if issue.Number != nil {
+			n := *issue.Number
+			i, err := p.fromGithubIssue(org, name, n, issue)
+			if err != nil {
+				return answer, err
+			}
+
+			// TODO apply the filter?
+			answer = append(answer, i)
+		}
+	}
+	return answer, nil
 }
 
 func (p *GitHubProvider) CreateIssue(owner string, repo string, issue *GitIssue) (*GitIssue, error) {
@@ -499,15 +573,9 @@ func (p *GitHubProvider) CreateIssue(owner string, repo string, issue *GitIssue)
 }
 
 func (p *GitHubProvider) fromGithubIssue(org string, name string, number int, i *github.Issue) (*GitIssue, error) {
-	serverPrefix := p.Server.URL
-	if !strings.HasPrefix(serverPrefix, "https://") {
-		serverPrefix = "https://" + serverPrefix
-	}
-	path := "issues"
 	isPull := i.IsPullRequest()
-	if isPull {
-		path = "pull"
-	}
+	url := p.IssueURL(org, name, number, isPull)
+
 	labels := []GitLabel{}
 	for _, label := range i.Labels {
 		labels = append(labels, toGitHubLabel(&label))
@@ -516,7 +584,6 @@ func (p *GitHubProvider) fromGithubIssue(org string, name string, number int, i 
 	for _, assignee := range i.Assignees {
 		assignees = append(assignees, *toGitHubUser(assignee))
 	}
-	url := util.UrlJoin(serverPrefix, org, name, path, strconv.Itoa(number))
 	return &GitIssue{
 		Number:        &number,
 		URL:           url,
@@ -529,6 +596,19 @@ func (p *GitHubProvider) fromGithubIssue(org string, name string, number int, i 
 		ClosedBy:      toGitHubUser(i.ClosedBy),
 		Assignees:     assignees,
 	}, nil
+}
+
+func (p *GitHubProvider) IssueURL(org string, name string, number int, isPull bool) string {
+	serverPrefix := p.Server.URL
+	if !strings.HasPrefix(serverPrefix, "https://") {
+		serverPrefix = "https://" + serverPrefix
+	}
+	path := "issues"
+	if isPull {
+		path = "pull"
+	}
+	url := util.UrlJoin(serverPrefix, org, name, path, strconv.Itoa(number))
+	return url
 }
 
 func toGitHubUser(user *github.User) *GitUser {
@@ -559,16 +639,31 @@ func (p *GitHubProvider) IsGitHub() bool {
 	return true
 }
 
+func (p *GitHubProvider) IsGitea() bool {
+	return false
+}
+
+func (p *GitHubProvider) Kind() string {
+	return "github"
+}
+
 func (p *GitHubProvider) JenkinsWebHookPath(gitURL string, secret string) string {
 	return "/github-webhook/"
 }
 
 func GitHubAccessTokenURL(url string) string {
-	return fmt.Sprintf("https://%s/settings/tokens/new?scopes=repo,read:user,user:email,write:repo_hook", url)
+	if strings.Index(url, "://") < 0 {
+		url = "https://" + url
+	}
+	return util.UrlJoin(url, "/settings/tokens/new?scopes=repo,read:user,user:email,write:repo_hook")
 }
 
 func (p *GitHubProvider) Label() string {
 	return p.Server.Label()
+}
+
+func (p *GitHubProvider) ServerURL() string {
+	return p.Server.URL
 }
 
 func asBool(b *bool) bool {

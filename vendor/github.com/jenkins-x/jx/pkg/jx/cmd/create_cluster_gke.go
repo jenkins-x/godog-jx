@@ -19,6 +19,7 @@ import (
 	"github.com/jenkins-x/jx/pkg/util"
 	"github.com/spf13/cobra"
 	"gopkg.in/AlecAivazis/survey.v1"
+	"regexp"
 )
 
 // CreateClusterOptions the flags for running crest cluster
@@ -51,6 +52,8 @@ var (
 		This command creates a new kubernetes cluster on GKE, installing required local dependencies and provisions the
 		Jenkins X platform
 
+		You can see a demo of this command here: [http://jenkins-x.io/demos/create_cluster_gke/](http://jenkins-x.io/demos/create_cluster_gke/)
+
 		Google Kubernetes Engine is a managed environment for deploying containerized applications. It brings our latest
 		innovations in developer productivity, resource efficiency, automated operations, and open source flexibility to
 		accelerate your time to market.
@@ -65,6 +68,7 @@ var (
 		jx create cluster gke
 
 `)
+	disallowedLabelCharacters = regexp.MustCompile("[^a-z0-9-]")
 )
 
 // NewCmdGet creates a command object for the generic "init" action, which
@@ -89,9 +93,9 @@ func NewCmdCreateClusterGKE(f cmdutil.Factory, out io.Writer, errOut io.Writer) 
 	options.addCreateClusterFlags(cmd)
 	options.addCommonFlags(cmd)
 
-	cmd.Flags().StringVarP(&options.Flags.ClusterName, "cluster-name", "n", "", "The name of this cluster, default is a random generated name")
+	cmd.Flags().StringVarP(&options.Flags.ClusterName, optionClusterName, "n", "", "The name of this cluster, default is a random generated name")
 	cmd.Flags().StringVarP(&options.Flags.ClusterIpv4Cidr, "cluster-ipv4-cidr", "", "", "The IP address range for the pods in this cluster in CIDR notation (e.g. 10.0.0.0/14)")
-	cmd.Flags().StringVarP(&options.Flags.ClusterVersion, "cluster-version", "v", "1.7.12-gke.1", "The Kubernetes version to use for the master and nodes. Defaults to server-specified")
+	cmd.Flags().StringVarP(&options.Flags.ClusterVersion, optionKubernetesVersion, "v", "", "The Kubernetes version to use for the master and nodes. Defaults to server-specified")
 	cmd.Flags().StringVarP(&options.Flags.DiskSize, "disk-size", "d", "", "Size in GB for node VM boot disks. Defaults to 100GB")
 	cmd.Flags().BoolVarP(&options.Flags.AutoUpgrade, "enable-autoupgrade", "", false, "Sets autoupgrade feature for a cluster's default node-pool(s)")
 	cmd.Flags().StringVarP(&options.Flags.MachineType, "machine-type", "m", "", "The type of machine to use for nodes")
@@ -150,7 +154,7 @@ func (o *CreateClusterGKEOptions) createClusterGKE() error {
 
 	if o.Flags.ClusterName == "" {
 		o.Flags.ClusterName = strings.ToLower(randomdata.SillyName())
-		log.Infof("No cluster name provided so using a generated one: %s", o.Flags.ClusterName)
+		log.Infof("No cluster name provided so using a generated one: %s\n", o.Flags.ClusterName)
 	}
 
 	zone := o.Flags.Zone
@@ -173,7 +177,7 @@ func (o *CreateClusterGKEOptions) createClusterGKE() error {
 		prompts := &survey.Select{
 			Message:  "Google Cloud Machine Type:",
 			Options:  gke.GetGoogleMachineTypes(),
-			Help:     "A table of machine descriptions can be found here https://cloud.google.com/kubernetes-engine/docs/concepts/cluster-architecture",
+			Help:     "We recommend a minimum of n1-standard-2 for Jenkins X,  a table of machine descriptions can be found here https://cloud.google.com/kubernetes-engine/docs/concepts/cluster-architecture",
 			PageSize: 10,
 			Default:  "n1-standard-2",
 		}
@@ -189,7 +193,7 @@ func (o *CreateClusterGKEOptions) createClusterGKE() error {
 		prompt := &survey.Input{
 			Message: "Number of Nodes",
 			Default: "3",
-			Help:    "The number of nodes to be created in each of the cluster's zones",
+			Help:    "We recommend a minimum of 3 for Jenkins X,  the number of nodes to be created in each of the cluster's zones",
 		}
 
 		survey.AskOne(prompt, &numOfNodes, nil)
@@ -221,7 +225,7 @@ func (o *CreateClusterGKEOptions) createClusterGKE() error {
 	labels := o.Flags.Labels
 	user, err := os_user.Current()
 	if err == nil && user != nil {
-		username := user.Username
+		username := sanitizeLabel(user.Username)
 		if username != "" {
 			sep := ""
 			if labels != "" {
@@ -231,7 +235,7 @@ func (o *CreateClusterGKEOptions) createClusterGKE() error {
 		}
 	}
 	if labels != "" {
-		args = append(args, "--labels="+labels)
+		args = append(args, "--labels="+strings.ToLower(labels))
 	}
 
 	err = o.runCommand("gcloud", args...)
@@ -274,6 +278,11 @@ func (o *CreateClusterGKEOptions) createClusterGKE() error {
 		return err
 	}
 	return nil
+}
+
+func sanitizeLabel(username string) string {
+	sanitized := strings.ToLower(username)
+	return disallowedLabelCharacters.ReplaceAllString(sanitized, "-")
 }
 
 // asks to chose from existing projects or optionally creates one if none exist

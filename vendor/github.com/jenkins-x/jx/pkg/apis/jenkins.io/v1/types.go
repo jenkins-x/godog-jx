@@ -75,6 +75,8 @@ const (
 	EnvironmentKindTypeTest EnvironmentKindType = "Test"
 	// EnvironmentKindTypeEdit specifies that an environment is a developers editing workspace
 	EnvironmentKindTypeEdit EnvironmentKindType = "Edit"
+	// EnvironmentKindTypeDevelopment specifies that an environment is a development environment; for developer tools like Jenkins, Nexus etc
+	EnvironmentKindTypeDevelopment EnvironmentKindType = "Development"
 )
 
 // IsPermanent returns true if this environment is permanent
@@ -161,6 +163,7 @@ type PipelineActivitySpec struct {
 	GitURL             string                 `json:"gitUrl,omitempty" protobuf:"bytes,10,opt,name=gitUrl"`
 	GitRepository      string                 `json:"gitRepository,omitempty" protobuf:"bytes,10,opt,name=gitRepository"`
 	GitOwner           string                 `json:"gitOwner,omitempty" protobuf:"bytes,10,opt,name=gitOwner"`
+	ReleaseNotesURL    string                 `json:"releaseNotesURL,omitempty" protobuf:"bytes,11,opt,name=releaseNotesURL"`
 }
 
 // PipelineActivityStep represents a step in a pipeline activity
@@ -190,9 +193,10 @@ type StageActivityStep struct {
 type PromoteActivityStep struct {
 	CoreActivityStep
 
-	Environment string                  `json:"environment,omitempty" protobuf:"bytes,1,opt,name=environment"`
-	PullRequest *PromotePullRequestStep `json:"pullRequest,omitempty" protobuf:"bytes,2,opt,name=pullRequest"`
-	Update      *PromoteUpdateStep      `json:"update,omitempty" protobuf:"bytes,3,opt,name=update"`
+	Environment    string                  `json:"environment,omitempty" protobuf:"bytes,1,opt,name=environment"`
+	PullRequest    *PromotePullRequestStep `json:"pullRequest,omitempty" protobuf:"bytes,2,opt,name=pullRequest"`
+	Update         *PromoteUpdateStep      `json:"update,omitempty" protobuf:"bytes,3,opt,name=update"`
+	ApplicationURL string                  `json:"applicationURL,omitempty" protobuf:"bytes,4,opt,name=environment"`
 }
 
 // GitStatus the status of a git commit in terms of CI / CD
@@ -297,13 +301,16 @@ type ReleaseList struct {
 
 // ReleaseSpec is the specification of the Release
 type ReleaseSpec struct {
-	Name         string          `json:"name,omitempty"  protobuf:"bytes,1,opt,name=name"`
-	Version      string          `json:"version,omitempty"  protobuf:"bytes,2,opt,name=version"`
-	GitHTTPURL   string          `json:"gitHttpUrl,omitempty"  protobuf:"bytes,3,opt,name=gitHttpUrl"`
-	GitCloneURL  string          `json:"gitCloneUrl,omitempty"  protobuf:"bytes,4,opt,name=gitCloneUrl"`
-	Commits      []CommitSummary `json:"commits,omitempty" protobuf:"bytes,5,opt,name=commits"`
-	Issues       []IssueSummary  `json:"issues,omitempty" protobuf:"bytes,6,opt,name=issues"`
-	PullRequests []IssueSummary  `json:"pullRequests,omitempty" protobuf:"bytes,7,opt,name=pullRequests"`
+	Name            string          `json:"name,omitempty"  protobuf:"bytes,1,opt,name=name"`
+	Version         string          `json:"version,omitempty"  protobuf:"bytes,2,opt,name=version"`
+	GitHTTPURL      string          `json:"gitHttpUrl,omitempty"  protobuf:"bytes,3,opt,name=gitHttpUrl"`
+	GitCloneURL     string          `json:"gitCloneUrl,omitempty"  protobuf:"bytes,4,opt,name=gitCloneUrl"`
+	Commits         []CommitSummary `json:"commits,omitempty" protobuf:"bytes,5,opt,name=commits"`
+	Issues          []IssueSummary  `json:"issues,omitempty" protobuf:"bytes,6,opt,name=issues"`
+	PullRequests    []IssueSummary  `json:"pullRequests,omitempty" protobuf:"bytes,7,opt,name=pullRequests"`
+	ReleaseNotesURL string          `json:"releaseNotesURL,omitempty" protobuf:"bytes,8,opt,name=releaseNotesURL"`
+	GitRepository   string          `json:"gitRepository,omitempty" protobuf:"bytes,9,opt,name=gitRepository"`
+	GitOwner        string          `json:"gitOwner,omitempty" protobuf:"bytes,10,opt,name=gitOwner"`
 }
 
 // ReleaseStatus is the status of a release
@@ -383,7 +390,8 @@ type GitService struct {
 // GitServiceSpec is the specification of an GitService
 type GitServiceSpec struct {
 	GitKind string `json:"gitKind,omitempty" protobuf:"bytes,1,opt,name=gitKind"`
-	Host    string `json:"host,omitempty" protobuf:"bytes,2,opt,name=host"`
+	URL     string `json:"url,omitempty" protobuf:"bytes,2,opt,name=host"`
+	Name    string `json:"name,omitempty" protobuf:"bytes,3,opt,name=host"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

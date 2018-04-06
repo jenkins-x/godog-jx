@@ -25,7 +25,11 @@ const ()
 
 var (
 	environment_long = templates.LongDesc(`
-		Displays or changes the current environment.`)
+		Displays or changes the current environment.
+
+		For more documentation on Environments see: [http://jenkins-x.io/about/features/#environments](http://jenkins-x.io/about/features/#environments)
+
+`)
 	environment_example = templates.Examples(`
 		# view the current environment
 		jx env -b
@@ -128,7 +132,7 @@ func (o *EnvironmentOptions) Run() error {
 		if err != nil {
 			return fmt.Errorf("Failed to update the kube config %s", err)
 		}
-		fmt.Fprintf(o.Out, "Now using environment '%s' in tean '%s' on server '%s'.\n", info(env), info(devNs), info(kube.Server(config, ctx)))
+		fmt.Fprintf(o.Out, "Now using environment '%s' in team '%s' on server '%s'.\n", info(env), info(devNs), info(kube.Server(config, ctx)))
 	} else {
 		ns := kube.CurrentNamespace(config)
 		server := kube.CurrentServer(config)

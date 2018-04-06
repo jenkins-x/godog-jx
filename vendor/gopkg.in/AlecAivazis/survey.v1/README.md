@@ -3,7 +3,7 @@
 [![Build Status](https://travis-ci.org/AlecAivazis/survey.svg?branch=feature%2Fpretty)](https://travis-ci.org/AlecAivazis/survey)
 [![GoDoc](http://img.shields.io/badge/godoc-reference-5272B4.svg)](https://godoc.org/gopkg.in/AlecAivazis/survey.v1)
 
-A library for building interactive prompts. Heavily inspired by the great [inquirer.js](https://github.com/SBoudrias/Inquirer.js/).
+A library for building interactive prompts. 
 
 ![](https://zippy.gfycat.com/AmusingBossyArrowworm.gif)
 
@@ -139,7 +139,8 @@ prompt := &survey.Select{
 survey.AskOne(prompt, &color, nil)
 ```
 
-The user can cycle through the options with the j and k keys to do down and up respectively.
+The user can filter for options by typing while the prompt is active. The user can also press `esc` to toggle 
+the ability cycle through the options with the j and k keys to do down and up respectively.
 
 By default, the select prompt is limited to showing 7 options at a time
 and will paginate lists of options longer than that. To increase, you can either
@@ -162,7 +163,8 @@ prompt := &survey.MultiSelect{
 survey.AskOne(prompt, &days, nil)
 ```
 
-The user can cycle through the options with the j and k keys to do down and up, respectively.
+The user can filter for options by typing while the prompt is active. The user can also press `esc` to toggle 
+the ability cycle through the options with the j and k keys to do down and up respectively.
 
 By default, the MultiSelect prompt is limited to showing 7 options at a time
 and will paginate lists of options longer than that. To increase, you can either

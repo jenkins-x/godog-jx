@@ -16,9 +16,12 @@ import (
 )
 
 var (
-	env_description = `		An Environment maps to a kubernetes cluster and namespace and is a place that your team's applications can be promoted to via Continous Delivery.
+	env_description = `		
+	An Environment maps to a kubernetes cluster and namespace and is a place that your team's applications can be promoted to via Continous Delivery.
 
-			You can optionally use GitOps to manage the configuration of an Environment by storing all configuration in a git repository and then only changing it via Pull Requests and CI / CD.
+	You can optionally use GitOps to manage the configuration of an Environment by storing all configuration in a git repository and then only changing it via Pull Requests and CI / CD.
+
+	For more documentation on Environments see: [http://jenkins-x.io/about/features/#environments](http://jenkins-x.io/about/features/#environments)
 	`
 	create_env_long = templates.LongDesc(`
 		Creates a new Environment
@@ -140,7 +143,7 @@ func (o *CreateEnvOptions) Run() error {
 	}
 	env := v1.Environment{}
 	o.Options.Spec.PromotionStrategy = v1.PromotionStrategyType(o.PromotionStrategy)
-	gitProvider, err := kube.CreateEnvironmentSurvey(o.Out, o.BatchMode, authConfigSvc, devEnv, &env, &o.Options, o.ForkEnvironmentGitRepo, ns, jxClient, kubeClient, envDir, o.GitRepositoryOptions, o.HelmValuesConfig, o.Prefix)
+	gitProvider, err := kube.CreateEnvironmentSurvey(o.Out, o.BatchMode, authConfigSvc, devEnv, &env, &o.Options, o.ForkEnvironmentGitRepo, ns, jxClient, kubeClient, envDir, &o.GitRepositoryOptions, o.HelmValuesConfig, o.Prefix)
 	if err != nil {
 		return err
 	}
@@ -167,7 +170,7 @@ func (o *CreateEnvOptions) Run() error {
 			}
 			gitProvider = p
 		}
-		return jenkins.ImportProject(o.Out, jenkinClient, gitURL, envDir, jenkins.DefaultJenkinsfile, o.BranchPattern, o.EnvJobCredentials, false, gitProvider, authConfigSvc)
+		return jenkins.ImportProject(o.Out, jenkinClient, gitURL, envDir, jenkins.DefaultJenkinsfile, o.BranchPattern, o.EnvJobCredentials, false, gitProvider, authConfigSvc, true, o.BatchMode)
 	}
 	return nil
 }

@@ -66,7 +66,36 @@ func GitClone(url string, directory string) error {
 	e.Stderr = os.Stderr
 	err := e.Run()
 	if err != nil {
-		return fmt.Errorf("Failed to invoke git init in %s due to %s", directory, err)
+		return fmt.Errorf("failed to invoke git clone to %s due to %s", directory, err)
+	}
+	return nil
+}
+
+// GitCloneOrPull will clone the given git URL or pull if it alreasy exists
+func GitCloneOrPull(url string, directory string) error {
+
+	empty, err := util.IsEmpty(directory)
+	if err != nil {
+		return err
+	}
+
+	if !empty {
+		e := exec.Command("git", "pull")
+		e.Dir = directory
+		e.Stdout = os.Stdout
+		e.Stderr = os.Stderr
+		err = e.Run()
+		if err != nil {
+			return fmt.Errorf("failed to git pull in %s due to %s", directory, err)
+		}
+		return nil
+	}
+	e := exec.Command("git", "clone", url, directory)
+	e.Stdout = os.Stdout
+	e.Stderr = os.Stderr
+	err = e.Run()
+	if err != nil {
+		return fmt.Errorf("failed to git clone to %s due to %s", directory, err)
 	}
 	return nil
 }
@@ -78,7 +107,7 @@ func GitInit(dir string) error {
 	e.Stderr = os.Stderr
 	err := e.Run()
 	if err != nil {
-		return fmt.Errorf("Failed to invoke git init in %s due to %s", dir, err)
+		return fmt.Errorf("failed to invoke git init in %s due to %s", dir, err)
 	}
 	return nil
 }
@@ -90,7 +119,7 @@ func GitStatus(dir string) error {
 	e.Stderr = os.Stderr
 	err := e.Run()
 	if err != nil {
-		return fmt.Errorf("Failed to invoke git status in %s due to %s", dir, err)
+		return fmt.Errorf("failed to invoke git status in %s due to %s", dir, err)
 	}
 	return nil
 }
@@ -106,7 +135,7 @@ func GitPush(dir string) error {
 	e.Stderr = os.Stderr
 	err := e.Run()
 	if err != nil {
-		return fmt.Errorf("Failed to invoke git push in %s due to %s", dir, err)
+		return fmt.Errorf("failed to invoke git push in %s due to %s", dir, err)
 	}
 	return nil
 }
@@ -119,7 +148,7 @@ func GitAdd(dir string, args ...string) error {
 	e.Stderr = os.Stderr
 	err := e.Run()
 	if err != nil {
-		return fmt.Errorf("Failed to run git add in %s due to %s", dir, err)
+		return fmt.Errorf("failed to run git add in %s due to %s", dir, err)
 	}
 	return nil
 }
@@ -154,7 +183,7 @@ func GitCommit(dir string, message string) error {
 	e.Stderr = os.Stderr
 	err := e.Run()
 	if err != nil {
-		return fmt.Errorf("Failed to run git commit in %s due to %s", dir, err)
+		return fmt.Errorf("failed to run git commit in %s due to %s", dir, err)
 	}
 	return nil
 }
@@ -166,7 +195,7 @@ func GitCmd(dir string, args ...string) error {
 	e.Stderr = os.Stderr
 	err := e.Run()
 	if err != nil {
-		return fmt.Errorf("Failed to invoke git %s in %s due to %s", strings.Join(args, " "), dir, err)
+		return fmt.Errorf("failed to invoke git %s in %s due to %s", strings.Join(args, " "), dir, err)
 	}
 	return nil
 }
@@ -197,7 +226,7 @@ func GetGitServer(dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return repo.Host, err
+	return repo.HostURL(), err
 }
 
 func GetGitInfo(dir string) (*GitRepositoryInfo, error) {
@@ -207,15 +236,15 @@ func GetGitInfo(dir string) (*GitRepositoryInfo, error) {
 	}
 	data, err := e.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to run git commit in %s due to %s", dir, err)
+		return nil, fmt.Errorf("failed to run git commit in %s due to %s", dir, err)
 	}
 
-	url := string(data)
-	url = strings.TrimSpace(url)
+	rUrl := string(data)
+	rUrl = strings.TrimSpace(rUrl)
 
-	repo, err := ParseGitURL(url)
+	repo, err := ParseGitURL(rUrl)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse git URL %s due to %s", url, err)
+		return nil, fmt.Errorf("failed to parse git URL %s due to %s", rUrl, err)
 	}
 	return repo, err
 }
@@ -269,17 +298,17 @@ func SetRemoteURL(dir string, name string, gitURL string) error {
 
 func parseGitConfig(gitConf string) (*gitcfg.Config, error) {
 	if gitConf == "" {
-		return nil, fmt.Errorf("No GitConfDir defined!")
+		return nil, fmt.Errorf("no GitConfDir defined")
 	}
 	cfg := gitcfg.NewConfig()
 	data, err := ioutil.ReadFile(gitConf)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to load %s due to %s", gitConf, err)
+		return nil, fmt.Errorf("failed to load %s due to %s", gitConf, err)
 	}
 
 	err = cfg.Unmarshal(data)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to unmarshal %s due to %s", gitConf, err)
+		return nil, fmt.Errorf("failed to unmarshal %s due to %s", gitConf, err)
 	}
 	return cfg, nil
 }
@@ -287,33 +316,33 @@ func parseGitConfig(gitConf string) (*gitcfg.Config, error) {
 func DiscoverRemoteGitURL(gitConf string) (string, error) {
 	cfg, err := parseGitConfig(gitConf)
 	if err != nil {
-		return "", fmt.Errorf("Failed to unmarshal %s due to %s", gitConf, err)
+		return "", fmt.Errorf("failed to unmarshal %s due to %s", gitConf, err)
 	}
 	remotes := cfg.Remotes
 	if len(remotes) == 0 {
 		return "", nil
 	}
-	url := GetRemoteUrl(cfg, "origin")
-	if url == "" {
-		url = GetRemoteUrl(cfg, "upstream")
+	rUrl := GetRemoteUrl(cfg, "origin")
+	if rUrl == "" {
+		rUrl = GetRemoteUrl(cfg, "upstream")
 	}
-	return url, nil
+	return rUrl, nil
 }
 
 func DiscoverUpstreamGitURL(gitConf string) (string, error) {
 	cfg, err := parseGitConfig(gitConf)
 	if err != nil {
-		return "", fmt.Errorf("Failed to unmarshal %s due to %s", gitConf, err)
+		return "", fmt.Errorf("failed to unmarshal %s due to %s", gitConf, err)
 	}
 	remotes := cfg.Remotes
 	if len(remotes) == 0 {
 		return "", nil
 	}
-	url := GetRemoteUrl(cfg, "upstream")
-	if url == "" {
-		url = GetRemoteUrl(cfg, "origin")
+	rUrl := GetRemoteUrl(cfg, "upstream")
+	if rUrl == "" {
+		rUrl = GetRemoteUrl(cfg, "origin")
 	}
-	return url, nil
+	return rUrl, nil
 }
 
 func firstRemoteUrl(remote *gitcfg.RemoteConfig) string {
@@ -360,12 +389,12 @@ func GetCurrentGitTagSHA(dir string) (string, error) {
 	return util.GetCommandOutput(dir, "git", "rev-list", "--tags", "--max-count=1")
 }
 
-func PrintCreateRepositoryGenerateAccessToken(server *auth.AuthServer, o io.Writer) {
-	tokenUrl := ProviderAccessTokenURL(server.Kind, server.URL)
+func PrintCreateRepositoryGenerateAccessToken(server *auth.AuthServer, username string, o io.Writer) {
+	tokenUrl := ProviderAccessTokenURL(server.Kind, server.URL, username)
 
 	fmt.Fprintf(o, "To be able to create a repository on %s we need an API Token\n", server.Label())
 	fmt.Fprintf(o, "Please click this URL %s\n\n", util.ColorInfo(tokenUrl))
-	fmt.Fprintf(o, "Then COPY the token and enter in into the form below:\n\n")
+	fmt.Fprint(o, "Then COPY the token and enter in into the form below:\n\n")
 }
 
 func GitIsFork(gitProvider GitProvider, gitInfo *GitRepositoryInfo, dir string) (bool, error) {
@@ -382,4 +411,13 @@ func GitIsFork(gitProvider GitProvider, gitInfo *GitRepositoryInfo, dir string) 
 		return false, err
 	}
 	return repo.Fork, nil
+}
+
+// ToGitLabels converts the list of label names into an array of GitLabels
+func ToGitLabels(names []string) []GitLabel {
+	answer := []GitLabel{}
+	for _, n := range names {
+		answer = append(answer, GitLabel{Name: n})
+	}
+	return answer
 }
