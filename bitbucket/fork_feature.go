@@ -33,7 +33,7 @@ func (f *ForkFeature) iForkTheBitbucketRepoToTheCurrentUser(originalRepoName str
 	if err != nil {
 		return err
 	}
-	currentBitbucketUser, err := utils.MandatoryEnvVar("GITHUB_USER")
+	currentBitbucketUser, err := utils.MandatoryEnvVar("BITBUCKET_USER")
 	if err != nil {
 		return err
 	}
