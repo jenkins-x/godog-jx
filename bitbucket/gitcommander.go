@@ -50,7 +50,7 @@ func (g *GitCommander) CloneFromURL(repo *gits.GitRepository, cloneURL string) (
 	}
 
 	urlParts := strings.Split(urlPath.Path, "/")
-	ownerPath := urlParts[0]
+	ownerPath := urlParts[1]
 
 	if err != nil {
 		return "", err

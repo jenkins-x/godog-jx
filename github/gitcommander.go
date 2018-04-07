@@ -57,6 +57,7 @@ func (g *GitCommander) CloneFromURL(repo *github.Repository, cloneURL string) (s
 
 	runDir := filepath.Join(g.Dir, *ownerName)
 	err := os.MkdirAll(runDir, 0770)
+	utils.LogInfo(runDir)
 	if err != nil {
 		return outDir, err
 	}

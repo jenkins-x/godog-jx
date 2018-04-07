@@ -3,6 +3,8 @@ package bitbucket
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"os"
 	"strings"
 
 	"github.com/jenkins-x/godog-jx/utils"
@@ -124,10 +126,24 @@ func IsUser(client *bitbucket.APIClient, name string) (bool, error) {
 	return false, err
 }
 
+func addAppPasswordToCloneUrl(cloneUrl string) string {
+	parsedUrl, err := url.Parse(cloneUrl)
+
+	if err != nil {
+		return ""
+	}
+	parsedUrl.User = url.UserPassword(
+		os.Getenv("BITBUCKET_USER"),
+		os.Getenv("BITBUCKET_APP_PASSWORD"),
+	)
+
+	return parsedUrl.String()
+}
+
 func GetCloneURL(repo *gits.GitRepository, useHttps bool) (string, error) {
 	cloneUrl := repo.SSHURL
 	if useHttps {
-		cloneUrl = repo.HTMLURL
+		cloneUrl = addAppPasswordToCloneUrl(repo.HTMLURL)
 		if cloneUrl == "" {
 			return "", fmt.Errorf("Git repository does not have a clone URL: %v", repo)
 		}
