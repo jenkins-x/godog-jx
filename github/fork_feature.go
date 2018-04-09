@@ -1,6 +1,8 @@
 package github
 
 import (
+	"time"
+
 	"github.com/jenkins-x/godog-jx/utils"
 )
 
@@ -51,9 +53,20 @@ func (f *ForkFeature) iForkTheGitHubOrganisationToTheCurrentUser(originalRepoNam
 
 	// now lets fork it
 	repo, err := ForkRepositoryOrRevertMasterInFork(client, userRepo, currentGithubUser)
-	if err != nil {
-		return err
+
+	utils.LogInfo("Waiting for fork to be available for cloning...")
+
+	// Loop until repo is available or 30 seconds have passed
+	for i := 0; i < 6; i++ {
+		time.Sleep(5 * time.Second)
+		repo, err = GetRepository(client, currentGithubUser, userRepo.Repository)
+
+		if err == nil {
+			utils.LogInfo("Fork is available for cloning!")
+			break
+		}
 	}
+
 	dir, err := gitcmder.Clone(repo)
 	if err != nil {
 		return err

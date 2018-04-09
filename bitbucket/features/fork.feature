@@ -4,7 +4,7 @@ Feature: fork GitHub Repo
   I need to be able to fork a Bitbucket repository to a clean fork
 
   Scenario: Fork repository
-    Given there is no fork of "pypa/bandersnatch"
-    When I fork the "pypa/bandersnatch" Bitbucket repo to the current user
-    Then there should be a fork for the current user which has the same last commit as "pypa/bandersnatch"
+    Given there is no fork of "atlassian/python-bitbucket"
+    When I fork the "atlassian/python-bitbucket" Bitbucket repo to the current user
+    Then there should be a fork for the current user which has the same last commit as "atlassian/python-bitbucket"
 

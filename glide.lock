@@ -1,5 +1,5 @@
 hash: beea4415cf3c8d06f89965b6579a4461746a73f7e6098d710c8076cf9ebc71e5
-updated: 2018-04-05T17:38:12.446154481-04:00
+updated: 2018-04-07T14:08:25.417644953-04:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -7,7 +7,7 @@ imports:
   - compute/metadata
   - internal
 - name: code.gitea.io/sdk
-  version: 417abc7c5dcf7d0967f41a2419f3a6445a069232
+  version: ea7eeee318b44f359aa5da3b48a91cee7264b10c
   subpackages:
   - gitea
 - name: github.com/Azure/go-autorest
@@ -109,7 +109,7 @@ imports:
 - name: github.com/jenkins-x/golang-jenkins
   version: ec7a97e4a0d7bfebfacb5818e70b77744d9f4d6d
 - name: github.com/jenkins-x/jx
-  version: bece3d60953aeaae792fe05de94f2d3ecb099346
+  version: 3ddeb2a55ba7089d7c775540f1dcd863fd21252d
   subpackages:
   - pkg/apis/jenkins.io
   - pkg/apis/jenkins.io/v1
@@ -170,7 +170,7 @@ imports:
   subpackages:
   - assert
 - name: github.com/wbrefvem/go-bitbucket
-  version: 6946f648c6394941a5303f92eed807e0f6366e15
+  version: 646c2e3f3d41c7f75b41d7fb63491ac373a629c9
 - name: github.com/xanzy/go-gitlab
   version: 3109bb13e379d3ada1ff1ca81557c6e7bce8e881
 - name: golang.org/x/crypto
@@ -213,7 +213,7 @@ imports:
   - unicode/norm
   - width
 - name: google.golang.org/appengine
-  version: ad39d7fab7c60b2493fdc318c3d2cdb2128f92a4
+  version: 0a24098c0ec68416ec050f567f75df563d6b231e
   subpackages:
   - internal
   - internal/app_identity
@@ -262,7 +262,6 @@ imports:
   - core/v1
   - events/v1beta1
   - extensions/v1beta1
-  - imagepolicy/v1alpha1
   - networking/v1
   - policy/v1beta1
   - rbac/v1
@@ -274,7 +273,7 @@ imports:
   - storage/v1alpha1
   - storage/v1beta1
 - name: k8s.io/apiextensions-apiserver
-  version: 76b8134f2082ae81f4989c709be17587745ef0c0
+  version: a8bcf4b960cebbdcb8caef3bec6b48bd3ce95cce
   subpackages:
   - pkg/apis/apiextensions
   - pkg/apis/apiextensions/v1beta1
@@ -387,7 +386,7 @@ imports:
   - pkg/common
   - pkg/util/proto
 - name: k8s.io/metrics
-  version: 4cc74194f563d1ac90a61b654083a4da01c1ae61
+  version: c44007dd1cc8d33cb8214facdd7520c8d2e8c949
   subpackages:
   - pkg/apis/metrics
   - pkg/apis/metrics/v1alpha1

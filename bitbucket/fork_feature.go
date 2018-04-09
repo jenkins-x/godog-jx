@@ -1,6 +1,8 @@
 package bitbucket
 
 import (
+	"time"
+
 	"github.com/jenkins-x/godog-jx/utils"
 )
 
@@ -33,7 +35,7 @@ func (f *ForkFeature) iForkTheBitbucketRepoToTheCurrentUser(originalRepoName str
 	if err != nil {
 		return err
 	}
-	currentBitbucketUser, err := utils.MandatoryEnvVar("GITHUB_USER")
+	currentBitbucketUser, err := utils.MandatoryEnvVar("BITBUCKET_USER")
 	if err != nil {
 		return err
 	}
@@ -43,6 +45,7 @@ func (f *ForkFeature) iForkTheBitbucketRepoToTheCurrentUser(originalRepoName str
 		return err
 	}
 	gitcmder := f.GitCommander
+	gitcmder.UseHttps = true
 
 	upstreamRepo, err := GetRepository(provider, userRepo.Organisation, userRepo.Repository)
 	if err != nil {
@@ -54,6 +57,20 @@ func (f *ForkFeature) iForkTheBitbucketRepoToTheCurrentUser(originalRepoName str
 	if err != nil {
 		return err
 	}
+
+	utils.LogInfo("Waiting for fork to be available for cloning...")
+
+	// Loop until repo is available or 30 seconds have passed
+	for i := 0; i < 6; i++ {
+		time.Sleep(5 * time.Second)
+		_, err := GetRepository(provider, userRepo.Organisation, userRepo.Repository)
+
+		if err == nil {
+			utils.LogInfo("Fork is available for cloning!")
+			break
+		}
+	}
+
 	dir, err := gitcmder.Clone(repo)
 	if err != nil {
 		return err
