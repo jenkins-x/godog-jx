@@ -27,7 +27,7 @@ func (r *UserRepositoryName) String() string {
 func ParseUserRepositoryName(text string) (*UserRepositoryName, error) {
 	values := strings.Split(text, "/")
 	if len(values) != 2 {
-		return nil, fmt.Errorf("Invalid github repository name. Expected the format `orgName/RepoName` but got %s", text)
+		return nil, fmt.Errorf("Invalid Bitbucket repository name. Expected the format `orgName/RepoName` but got %s", text)
 	}
 	return &UserRepositoryName{
 		Organisation: values[0],
