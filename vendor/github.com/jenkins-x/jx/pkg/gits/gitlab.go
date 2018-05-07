@@ -3,8 +3,12 @@ package gits
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"github.com/jenkins-x/jx/pkg/apis/jenkins.io/v1"
 	"github.com/jenkins-x/jx/pkg/auth"
-	"github.com/xanzy/go-gitlab"
+	"github.com/jenkins-x/jx/pkg/util"
+	gitlab "github.com/wbrefvem/go-gitlab"
 )
 
 type GitlabProvider struct {
@@ -45,6 +49,12 @@ func (g *GitlabProvider) ListRepositories(org string) ([]*GitRepository, error) 
 	return repos, nil
 }
 
+func (g *GitlabProvider) ListReleases(org string, name string) ([]*GitRelease, error) {
+	answer := []*GitRelease{}
+	// TODO
+	return answer, nil
+}
+
 func getRepositories(g *gitlab.Client, username string, org string) ([]*gitlab.Project, *gitlab.Response, error) {
 	if org == "" {
 		return g.Projects.ListUserProjects(username, &gitlab.ListProjectsOptions{Owned: gitlab.Bool(true)})
@@ -58,7 +68,7 @@ func fromGitlabProject(p *gitlab.Project) *GitRepository {
 		HTMLURL:  p.WebURL,
 		SSHURL:   p.SSHURLToRepo,
 		CloneURL: p.SSHURLToRepo,
-		Fork:     p.ForkedFromProject == nil,
+		Fork:     p.ForkedFromProject != nil,
 	}
 }
 
@@ -93,9 +103,9 @@ func owner(org, username string) string {
 
 func (g *GitlabProvider) GetRepository(org, name string) (*GitRepository, error) {
 	pid := projectId(org, g.Username, name)
-	project, _, err := g.Client.Projects.GetProject(pid)
+	project, response, err := g.Client.Projects.GetProject(pid)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%v", response.Request.URL)
 	}
 	return fromGitlabProject(project), nil
 }
@@ -153,7 +163,7 @@ func (g *GitlabProvider) ValidateRepositoryName(org, name string) error {
 	if err == nil {
 		return fmt.Errorf("repository %s already exists", pid)
 	}
-	if r.StatusCode == 404 {
+	if r != nil && r.StatusCode == 404 {
 		return nil
 	}
 	return err
@@ -185,11 +195,14 @@ func (g *GitlabProvider) CreatePullRequest(data *GitPullRequestArguments) (*GitP
 
 func fromMergeRequest(mr *gitlab.MergeRequest, owner, repo string) *GitPullRequest {
 	return &GitPullRequest{
+		Author: mr.Author.Username,
 		URL:    mr.WebURL,
 		Owner:  owner,
 		Repo:   repo,
 		Number: &mr.IID,
 		State:  &mr.State,
+		Title:  mr.Title,
+		Body:   mr.Description,
 	}
 }
 
@@ -205,6 +218,16 @@ func (g *GitlabProvider) UpdatePullRequestStatus(pr *GitPullRequest) error {
 
 	*pr = *fromMergeRequest(mr, owner, repo)
 	return nil
+}
+
+func (p *GitlabProvider) GetPullRequest(owner, repo string, number int) (*GitPullRequest, error) {
+	pr := &GitPullRequest{
+		Owner:  owner,
+		Repo:   repo,
+		Number: &number,
+	}
+	err := p.UpdatePullRequestStatus(pr)
+	return pr, err
 }
 
 func (g *GitlabProvider) PullRequestLastCommitStatus(pr *GitPullRequest) (string, error) {
@@ -278,7 +301,20 @@ func (g *GitlabProvider) CreateWebHook(data *GitWebHookArguments) error {
 
 func (g *GitlabProvider) SearchIssues(org, repo, query string) ([]*GitIssue, error) {
 	opt := &gitlab.ListProjectIssuesOptions{Search: &query}
+	return g.searchIssuesWithOptions(org, repo, opt)
+}
 
+func (g *GitlabProvider) SearchIssuesClosedSince(org string, repo string, t time.Time) ([]*GitIssue, error) {
+	closed := "closed"
+	opt := &gitlab.ListProjectIssuesOptions{State: &closed}
+	issues, err := g.searchIssuesWithOptions(org, repo, opt)
+	if err != nil {
+		return issues, err
+	}
+	return FilterIssuesClosedSince(issues, t), nil
+}
+
+func (g *GitlabProvider) searchIssuesWithOptions(org string, repo string, opt *gitlab.ListProjectIssuesOptions) ([]*GitIssue, error) {
 	pid := projectId(org, g.Username, repo)
 	issues, _, err := g.Client.Issues.ListProjectIssues(pid, opt)
 	if err != nil {
@@ -338,13 +374,14 @@ func fromGitlabIssue(issue *gitlab.Issue, owner, repo string) *GitIssue {
 	}
 
 	return &GitIssue{
-		Number: &issue.IID,
-		URL:    issue.WebURL,
-		Owner:  owner,
-		Repo:   repo,
-		Title:  issue.Title,
-		Body:   issue.Description,
-		Labels: labels,
+		Number:   &issue.IID,
+		URL:      issue.WebURL,
+		Owner:    owner,
+		Repo:     repo,
+		Title:    issue.Title,
+		Body:     issue.Description,
+		Labels:   labels,
+		ClosedAt: issue.ClosedAt,
 	}
 }
 
@@ -399,10 +436,36 @@ func (p *GitlabProvider) ServerURL() string {
 	return p.Server.URL
 }
 
+func (p *GitlabProvider) CurrentUsername() string {
+	return p.Username
+}
+
+func (p *GitlabProvider) UserInfo(username string) *v1.UserSpec {
+	users, _, err := p.Client.Users.ListUsers(&gitlab.ListUsersOptions{Username: &username})
+
+	if err != nil || len(users) == 0 {
+		return nil
+	}
+
+	user := users[0]
+
+	return &v1.UserSpec{
+		Username: username,
+		LinkURL:  user.WebsiteURL,
+		ImageURL: user.AvatarURL,
+		Name:     user.Name,
+	}
+}
+
 func (g *GitlabProvider) UpdateRelease(owner string, repo string, tag string, releaseInfo *GitRelease) error {
 	return nil
 }
 
 func (p *GitlabProvider) IssueURL(org string, name string, number int, isPull bool) string {
 	return ""
+}
+
+// GitlabAccessTokenURL returns the URL to click on to generate a personal access token for the git provider
+func GitlabAccessTokenURL(url string) string {
+	return util.UrlJoin(url, "/profile/personal_access_tokens")
 }

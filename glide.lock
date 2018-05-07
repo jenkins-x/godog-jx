@@ -1,5 +1,5 @@
 hash: beea4415cf3c8d06f89965b6579a4461746a73f7e6098d710c8076cf9ebc71e5
-updated: 2018-04-07T14:08:25.417644953-04:00
+updated: 2018-05-06T23:43:41.345315256-04:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -7,7 +7,7 @@ imports:
   - compute/metadata
   - internal
 - name: code.gitea.io/sdk
-  version: ea7eeee318b44f359aa5da3b48a91cee7264b10c
+  version: 40e36e1d2f85402456041f90eba7109d22ddf644
   subpackages:
   - gitea
 - name: github.com/Azure/go-autorest
@@ -17,6 +17,8 @@ imports:
   - autorest/adal
   - autorest/azure
   - autorest/date
+- name: github.com/beevik/etree
+  version: 9d7e8feddccb4ed1b8afb54e368bd323d2ff652c
 - name: github.com/blang/semver
   version: c5e971dbed7850a93c23aa6ff69db5771d8e23b3
 - name: github.com/cucumber/gherkin-go
@@ -66,7 +68,7 @@ imports:
 - name: github.com/google/btree
   version: 7d79101e329e5a3adf994758c578dab82b90c017
 - name: github.com/google/go-github
-  version: 88eb4e9dc91cb2db1bbc56c936f1ee39bbe72ba5
+  version: eafdb6578137f78fe186e486a4bc633e1434cc89
   subpackages:
   - github
 - name: github.com/google/go-querystring
@@ -105,11 +107,11 @@ imports:
 - name: github.com/inconshreveable/mousetrap
   version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
 - name: github.com/Jeffail/gabs
-  version: 44cbc27138518b15305cb3eef220d04f2d641b9b
+  version: 7a0fed31069aba77993a518cc2f37b28ee7aa883
 - name: github.com/jenkins-x/golang-jenkins
-  version: ec7a97e4a0d7bfebfacb5818e70b77744d9f4d6d
+  version: 39fed9b296c3d46901594ffc4afabb13adcd0411
 - name: github.com/jenkins-x/jx
-  version: 3ddeb2a55ba7089d7c775540f1dcd863fd21252d
+  version: 6757c8389f642d4311dbea3a1f65307c3d4c7def
   subpackages:
   - pkg/apis/jenkins.io
   - pkg/apis/jenkins.io/v1
@@ -126,7 +128,7 @@ imports:
   - pkg/kube
   - pkg/util
 - name: github.com/json-iterator/go
-  version: 36b14963da70d11297d313183d7e6388c8510e1e
+  version: 13f86432b882000a51c6e610c620974462691a97
 - name: github.com/juju/ratelimit
   version: 5b9ff866471762aa2ab2dced63c9fb6f53921342
 - name: github.com/mailru/easyjson
@@ -144,7 +146,9 @@ imports:
 - name: github.com/mgutz/ansi
   version: 9520e82c474b0a04dd04f8a40959027271bab992
 - name: github.com/Pallinder/go-randomdata
-  version: dab270d296c6c8fb98de3b4334bbd7d7b0ceca53
+  version: b073033ef5a7c42a3f188393575a0850919777a6
+- name: github.com/pborman/uuid
+  version: ca53cad383cad2479bbba7f7a1a05797ec1386e4
 - name: github.com/peterbourgon/diskv
   version: 5f041e8faa004a95c88a202771f4cc3e991971e6
 - name: github.com/pmezard/go-difflib
@@ -156,7 +160,7 @@ imports:
 - name: github.com/PuerkitoBio/urlesc
   version: 5bd2802263f21d8788851d5305584c82a5c75d7e
 - name: github.com/spf13/cobra
-  version: 4dab30cb33e6633c33c787106bafbfbfdde7842d
+  version: ef82de70bb3f60c65fb8eebacbb2d122ef517385
 - name: github.com/spf13/pflag
   version: 1cd4a0c365d95803411bec89fb7b76bade17053b
 - name: github.com/src-d/gcfg
@@ -170,9 +174,9 @@ imports:
   subpackages:
   - assert
 - name: github.com/wbrefvem/go-bitbucket
-  version: 646c2e3f3d41c7f75b41d7fb63491ac373a629c9
-- name: github.com/xanzy/go-gitlab
-  version: 3109bb13e379d3ada1ff1ca81557c6e7bce8e881
+  version: 822a62f68abbfe210f3e2fa7474c6fd5b3147d5e
+- name: github.com/wbrefvem/go-gitlab
+  version: 6a309c607d1d2bccf62ee92f0a327deaa3ae7963
 - name: golang.org/x/crypto
   version: 81e90905daefcd6fd217b62423c0908922eadb30
   subpackages:
@@ -213,7 +217,7 @@ imports:
   - unicode/norm
   - width
 - name: google.golang.org/appengine
-  version: 0a24098c0ec68416ec050f567f75df563d6b231e
+  version: 962cbd1200af94a5a35ba8d512e9f91271b4d01a
   subpackages:
   - internal
   - internal/app_identity
@@ -225,7 +229,7 @@ imports:
   - internal/urlfetch
   - urlfetch
 - name: gopkg.in/AlecAivazis/survey.v1
-  version: 9d3458c219bae9653d267883634bdb5375281fd8
+  version: 64f26f793f7ee7c0de1a3bb814fcf0aad99e429e
   subpackages:
   - core
   - terminal
@@ -240,7 +244,7 @@ imports:
 - name: gopkg.in/warnings.v0
   version: ec4a0fea49c7b46c2aeb0b51aac55779c607e52b
 - name: gopkg.in/yaml.v2
-  version: 53feefa2559fb8dfa8d81baad31be332c97d6c77
+  version: 5420a8b6744d3b0345ab293f6fcba19c978f1183
 - name: k8s.io/api
   version: 11147472b7c934c474a2c484af3c0c5210b7a3af
   subpackages:
@@ -273,7 +277,7 @@ imports:
   - storage/v1alpha1
   - storage/v1beta1
 - name: k8s.io/apiextensions-apiserver
-  version: a8bcf4b960cebbdcb8caef3bec6b48bd3ce95cce
+  version: a5c89ff2aef18eb9de1e8ef5ac81e8be76a8d716
   subpackages:
   - pkg/apis/apiextensions
   - pkg/apis/apiextensions/v1beta1
@@ -314,6 +318,7 @@ imports:
   - pkg/util/net
   - pkg/util/runtime
   - pkg/util/sets
+  - pkg/util/uuid
   - pkg/util/validation
   - pkg/util/validation/field
   - pkg/util/wait
@@ -381,12 +386,12 @@ imports:
   - util/integer
   - util/jsonpath
 - name: k8s.io/kube-openapi
-  version: 39a7bf85c140f972372c2a0d1ee40adbf0c8bfe1
+  version: 50ae88d24ede7b8bad68e23c805b5d3da5c8abaf
   subpackages:
   - pkg/common
   - pkg/util/proto
 - name: k8s.io/metrics
-  version: c44007dd1cc8d33cb8214facdd7520c8d2e8c949
+  version: 08e35f657428e205ad9bc69c0dd40a61bc28c55b
   subpackages:
   - pkg/apis/metrics
   - pkg/apis/metrics/v1alpha1

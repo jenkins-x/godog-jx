@@ -17,7 +17,7 @@ var (
 `)
 
 	deleteTrackerTokenExample = templates.Examples(`
-		# Deletes an issie tracker user token
+		# Deletes an issue tracker user token
 		jx delete tracker token -n jira myusername
 	`)
 )
@@ -43,7 +43,7 @@ func NewCmdDeleteTrackerToken(f cmdutil.Factory, out io.Writer, errOut io.Writer
 
 	cmd := &cobra.Command{
 		Use:     "token",
-		Short:   "Deletes one or more api tokens for a user on an inssue tracker server",
+		Short:   "Deletes one or more api tokens for a user on an issue tracker server",
 		Aliases: []string{"api-token"},
 		Long:    deleteTrackerTokenLong,
 		Example: deleteTrackerTokenExample,
@@ -64,7 +64,7 @@ func (o *DeleteTrackerTokenOptions) Run() error {
 	if len(args) == 0 {
 		return fmt.Errorf("Missing issue tracker user name")
 	}
-	authConfigSvc, err := o.CreateIssueTrackerAuthConfigService("")
+	authConfigSvc, err := o.CreateIssueTrackerAuthConfigService()
 	if err != nil {
 		return err
 	}

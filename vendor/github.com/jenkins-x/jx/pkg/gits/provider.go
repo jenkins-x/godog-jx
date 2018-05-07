@@ -3,10 +3,10 @@ package gits
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jenkins-x/jx/pkg/apis/jenkins.io/v1"
 	"github.com/jenkins-x/jx/pkg/auth"
 	"gopkg.in/AlecAivazis/survey.v1"
 )
@@ -36,6 +36,8 @@ type GitProvider interface {
 
 	UpdatePullRequestStatus(pr *GitPullRequest) error
 
+	GetPullRequest(owner, repo string, number int) (*GitPullRequest, error)
+
 	PullRequestLastCommitStatus(pr *GitPullRequest) (string, error)
 
 	ListCommitStatus(org string, repo string, sha string) ([]*GitRepoStatus, error)
@@ -56,6 +58,8 @@ type GitProvider interface {
 
 	SearchIssues(org string, name string, query string) ([]*GitIssue, error)
 
+	SearchIssuesClosedSince(org string, name string, t time.Time) ([]*GitIssue, error)
+
 	CreateIssue(owner string, repo string, issue *GitIssue) (*GitIssue, error)
 
 	HasIssues() bool
@@ -65,6 +69,8 @@ type GitProvider interface {
 	CreateIssueComment(owner string, repo string, number int, comment string) error
 
 	UpdateRelease(owner string, repo string, tag string, releaseInfo *GitRelease) error
+
+	ListReleases(org string, name string) ([]*GitRelease, error)
 
 	// returns the path relative to the Jenkins URL to trigger webhooks on this kind of repository
 	//
@@ -93,6 +99,12 @@ type GitProvider interface {
 
 	// ServerURL returns the git server URL
 	ServerURL() string
+
+	// Returns the current username
+	CurrentUsername() string
+
+	// Returns user info
+	UserInfo(username string) *v1.UserSpec
 }
 
 type GitOrganisation struct {
@@ -107,10 +119,12 @@ type GitRepository struct {
 	SSHURL           string
 	Language         string
 	Fork             bool
+	Stars            int
 }
 
 type GitPullRequest struct {
 	URL            string
+	Author         string
 	Owner          string
 	Repo           string
 	Number         *int
@@ -124,6 +138,8 @@ type GitPullRequest struct {
 	ClosedAt       *time.Time
 	MergedAt       *time.Time
 	LastCommitSha  string
+	Title          string
+	Body           string
 }
 
 type GitIssue struct {
@@ -154,11 +170,12 @@ type GitUser struct {
 }
 
 type GitRelease struct {
-	Name    string
-	TagName string
-	Body    string
-	URL     string
-	HTMLURL string
+	Name          string
+	TagName       string
+	Body          string
+	URL           string
+	HTMLURL       string
+	DownloadCount int
 }
 
 type GitLabel struct {
@@ -204,24 +221,14 @@ func (pr *GitPullRequest) IsClosed() bool {
 	return pr.ClosedAt != nil
 }
 
-// Name returns the textual name of the issue
-func (i *GitIssue) Name() string {
-	if i.Key != "" {
-		return i.Key
-	}
-	n := i.Number
-	if n != nil {
-		return "#" + strconv.Itoa(*n)
-	}
-	return "N/A"
-}
-
 func CreateProvider(server *auth.AuthServer, user *auth.UserAuth) (GitProvider, error) {
 	switch server.Kind {
-	case "gitea":
-		return NewGiteaProvider(server, user)
-	case "bitbucket":
+	case KindBitBucket:
 		return NewBitbucketCloudProvider(server, user)
+	case KindGitea:
+		return NewGiteaProvider(server, user)
+	case KindGitlab:
+		return NewGitlabProvider(server, user)
 	default:
 		return NewGitHubProvider(server, user)
 	}
@@ -229,11 +236,13 @@ func CreateProvider(server *auth.AuthServer, user *auth.UserAuth) (GitProvider, 
 
 func ProviderAccessTokenURL(kind string, url string, username string) string {
 	switch kind {
-	case "bitbucket":
+	case KindBitBucket:
 		// TODO pass in the username
 		return BitbucketAccessTokenURL(url, username)
-	case "gitea":
+	case KindGitea:
 		return GiteaAccessTokenURL(url)
+	case KindGitlab:
+		return GitlabAccessTokenURL(url)
 	default:
 		return GitHubAccessTokenURL(url)
 	}
@@ -344,6 +353,9 @@ func (i *GitRepositoryInfo) PickOrCreateProvider(authConfigSvc auth.AuthConfigSe
 	config := authConfigSvc.Config()
 	hostUrl := i.HostURLWithoutUser()
 	server := config.GetOrCreateServer(hostUrl)
+	if server.Kind == "" {
+		server.Kind = gitKind
+	}
 	userAuth, err := config.PickServerUserAuth(server, message, batchMode)
 	if err != nil {
 		return nil, err

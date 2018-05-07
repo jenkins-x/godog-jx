@@ -1,4 +1,4 @@
-Feature: fork GitHub Repo
+Feature: fork Bitbucket Repo
   In order to test importing a quickstart
   As a tester
   I need to be able to fork a Bitbucket repository to a clean fork

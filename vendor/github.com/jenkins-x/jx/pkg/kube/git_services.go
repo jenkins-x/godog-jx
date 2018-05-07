@@ -8,6 +8,7 @@ import (
 
 	"github.com/jenkins-x/jx/pkg/apis/jenkins.io/v1"
 	"github.com/jenkins-x/jx/pkg/client/clientset/versioned"
+	"github.com/jenkins-x/jx/pkg/gits"
 	"gopkg.in/yaml.v2"
 	"k8s.io/client-go/kubernetes"
 
@@ -61,16 +62,32 @@ func EnsureGitServiceExistsForHost(jxClient *versioned.Clientset, devNs string, 
 			GitKind: kind,
 		},
 	}
-	_, err = gitServices.Create(gitSvc)
+	current, err := gitServices.Get(name, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("Failed to create  GitService with name %s: %s", gitSvc.Name, err)
+		_, err = gitServices.Create(gitSvc)
+		if err != nil {
+			return fmt.Errorf("Failed to create GitService with name %s: %s", gitSvc.Name, err)
+		}
+	} else if current != nil {
+		if current.Spec.URL != gitSvc.Spec.URL || current.Spec.GitKind != gitSvc.Spec.GitKind {
+			current.Spec.URL = gitSvc.Spec.URL
+			current.Spec.GitKind = gitSvc.Spec.GitKind
+
+			_, err = gitServices.Update(current)
+			if err != nil {
+				return fmt.Errorf("Failed to update GitService with name %s: %s", gitSvc.Name, err)
+			}
+		}
 	}
 	return nil
 }
 
 // GetGitServiceKind returns the kind of the given host if one can be found or ""
 func GetGitServiceKind(jxClient *versioned.Clientset, kubeClient *kubernetes.Clientset, devNs string, gitServiceUrl string) (string, error) {
-	answer := ""
+	answer := gits.SaasGitKind(gitServiceUrl)
+	if answer != "" {
+		return answer, nil
+	}
 	cm, err := kubeClient.CoreV1().ConfigMaps(devNs).Get(ConfigMapJenkinsXGitKinds, metav1.GetOptions{})
 	if err == nil {
 		answer = GetGitServiceKindFromConfigMap(cm, gitServiceUrl)

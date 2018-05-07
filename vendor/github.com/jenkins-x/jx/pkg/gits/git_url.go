@@ -88,8 +88,13 @@ func (i *GitRepositoryInfo) HostURLWithoutUser() string {
 			u2.Path = ""
 			return u2.String()
 		}
+
 	}
-	return i.HttpsURL()
+	host := i.Host
+	if !strings.Contains(host, ":/") {
+		host = "https://" + host
+	}
+	return host
 }
 
 // PipelinePath returns the pipeline path for the master branch which can be used to query
@@ -147,5 +152,21 @@ func parsePath(path string, info *GitRepositoryInfo) (*GitRepositoryInfo, error)
 		return info, nil
 	} else {
 		return info, fmt.Errorf("Invalid path %s could not determine organisation and repository name", path)
+	}
+}
+
+// SaasGitKind returns the kind for SaaS git providers or "" if the URL could not be deduced
+func SaasGitKind(gitServiceUrl string) string {
+	switch gitServiceUrl {
+	case "http://github.com":
+		return KindGitHub
+	case "https://github.com":
+		return KindGitHub
+	case "http://bitbucket.org":
+		return KindBitBucket
+	case BitbucketCloudURL:
+		return KindBitBucket
+	default:
+		return ""
 	}
 }

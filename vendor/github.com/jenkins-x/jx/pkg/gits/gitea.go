@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"code.gitea.io/sdk/gitea"
+	"github.com/jenkins-x/jx/pkg/apis/jenkins.io/v1"
 	"github.com/jenkins-x/jx/pkg/auth"
 	"github.com/jenkins-x/jx/pkg/util"
 )
@@ -71,6 +72,37 @@ func (p *GiteaProvider) ListRepositories(org string) ([]*GitRepository, error) {
 		answer = append(answer, toGiteaRepo(repo.Name, repo))
 	}
 	return answer, nil
+}
+
+func (p *GiteaProvider) ListReleases(org string, name string) ([]*GitRelease, error) {
+	owner := org
+	if owner == "" {
+		owner = p.Username
+	}
+	answer := []*GitRelease{}
+	repos, err := p.Client.ListReleases(owner, name)
+	if err != nil {
+		return answer, err
+	}
+	for _, repo := range repos {
+		answer = append(answer, toGiteaRelease(org, name, repo))
+	}
+	return answer, nil
+}
+
+func toGiteaRelease(org string, name string, release *gitea.Release) *GitRelease {
+	totalDownloadCount := 0
+	for _, asset := range release.Attachments {
+		totalDownloadCount = totalDownloadCount + int(asset.DownloadCount)
+	}
+	return &GitRelease{
+		Name:          release.Title,
+		TagName:       release.TagName,
+		Body:          release.Note,
+		URL:           release.URL,
+		HTMLURL:       release.URL,
+		DownloadCount: totalDownloadCount,
+	}
 }
 
 func (p *GiteaProvider) CreateRepository(org string, name string, private bool) (*GitRepository, error) {
@@ -244,11 +276,14 @@ func (p *GiteaProvider) UpdatePullRequestStatus(pr *GitPullRequest) error {
 	if err != nil {
 		return fmt.Errorf("Could not find pull request for %s/%s #%d: %s", pr.Owner, pr.Repo, n, err)
 	}
+	pr.Author = result.Poster.UserName
 	merged := result.HasMerged
 	pr.Merged = &merged
 	pr.Mergeable = &result.Mergeable
 	pr.MergedAt = result.Merged
 	pr.MergeCommitSHA = result.MergedCommitID
+	pr.Title = result.Title
+	pr.Body = result.Body
 	stateText := string(result.State)
 	pr.State = &stateText
 	head := result.Head
@@ -266,6 +301,16 @@ func (p *GiteaProvider) UpdatePullRequestStatus(pr *GitPullRequest) error {
 		pr.DiffURL = result.DiffURL
 	*/
 	return nil
+}
+
+func (p *GiteaProvider) GetPullRequest(owner, repo string, number int) (*GitPullRequest, error) {
+	pr := &GitPullRequest{
+		Owner:  owner,
+		Repo:   repo,
+		Number: &number,
+	}
+	err := p.UpdatePullRequestStatus(pr)
+	return pr, err
 }
 
 func (p *GiteaProvider) GetIssue(org string, name string, number int) (*GitIssue, error) {
@@ -294,6 +339,21 @@ func (p *GiteaProvider) IssueURL(org string, name string, number int, isPull boo
 
 func (p *GiteaProvider) SearchIssues(org string, name string, filter string) ([]*GitIssue, error) {
 	opts := gitea.ListIssueOption{}
+	// TODO apply the filter?
+	return p.searchIssuesWithOptions(org, name, opts)
+}
+
+func (p *GiteaProvider) SearchIssuesClosedSince(org string, name string, t time.Time) ([]*GitIssue, error) {
+	opts := gitea.ListIssueOption{}
+	issues, err := p.searchIssuesWithOptions(org, name, opts)
+	if err != nil {
+		return issues, err
+	}
+	return FilterIssuesClosedSince(issues, t), nil
+}
+
+func (p *GiteaProvider) searchIssuesWithOptions(org string, name string, opts gitea.ListIssueOption) ([]*GitIssue, error) {
+	opts.Page = 0
 	answer := []*GitIssue{}
 	issues, err := p.Client.ListRepoIssues(org, name, opts)
 	if err != nil {
@@ -307,8 +367,6 @@ func (p *GiteaProvider) SearchIssues(org string, name string, filter string) ([]
 		if err != nil {
 			return answer, err
 		}
-
-		// TODO apply the filter?
 		answer = append(answer, i)
 	}
 	return answer, nil
@@ -336,6 +394,7 @@ func (p *GiteaProvider) fromGiteaIssue(org string, name string, i *gitea.Issue) 
 		Labels:        labels,
 		User:          toGiteaUser(i.Poster),
 		Assignees:     assignees,
+		ClosedAt:      i.Closed,
 	}, nil
 }
 
@@ -534,4 +593,23 @@ func (p *GiteaProvider) Label() string {
 
 func (p *GiteaProvider) ServerURL() string {
 	return p.Server.URL
+}
+
+func (p *GiteaProvider) CurrentUsername() string {
+	return p.Username
+}
+
+func (p *GiteaProvider) UserInfo(username string) *v1.UserSpec {
+	user, err := p.Client.GetUserInfo(username)
+
+	if err != nil {
+		return nil
+	}
+
+	return &v1.UserSpec{
+		Username: username,
+		Name:     user.FullName,
+		ImageURL: user.AvatarURL,
+		// TODO figure the Gitea user url
+	}
 }

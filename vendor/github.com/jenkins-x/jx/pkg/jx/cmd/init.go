@@ -204,7 +204,10 @@ func (o *InitOptions) enableClusterAdminRole() error {
 	if err != nil {
 		o.Printf("Trying to create ClusterRoleBinding %s for role: %s for user %s\n", clusterRoleBindingName, role, user)
 		args := []string{"create", "clusterrolebinding", clusterRoleBindingName, "--clusterrole=" + role, "--user=" + user}
-		err := o.runCommand("kubectl", args...)
+
+		err := o.retry(3, 10*time.Second, func() (err error) {
+			return o.runCommand("kubectl", args...)
+		})
 		if err != nil {
 			return err
 		}
@@ -421,6 +424,10 @@ func (o *InitOptions) initIngress() error {
 
 	}
 
+	if isOpenShiftProvider(o.Flags.Provider) {
+		o.Printf("Not installing ingress as using OpenShift which uses Route and its own mechanism of ingress\n")
+		return nil
+	}
 	podCount, err := kube.DeploymentPodCount(client, o.Flags.IngressDeployment, ingressNamespace)
 	if podCount == 0 {
 		installIngressController := false

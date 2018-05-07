@@ -3,18 +3,15 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/url"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/jenkins-x/golang-jenkins"
 	"github.com/jenkins-x/jx/pkg/auth"
 	"github.com/jenkins-x/jx/pkg/client/clientset/versioned"
-	"github.com/jenkins-x/jx/pkg/gits"
+
 	"github.com/jenkins-x/jx/pkg/jx/cmd/table"
 	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 	"github.com/jenkins-x/jx/pkg/kube"
@@ -26,8 +23,11 @@ import (
 )
 
 const (
-	optionServerName = "name"
-	optionServerURL  = "url"
+	optionServerName        = "name"
+	optionServerURL         = "url"
+	exposecontrollerVersion = "2.3.56"
+	exposecontroller        = "exposecontroller"
+	exposecontrollerChart   = "chartmuseum/exposecontroller"
 )
 
 // CommonOptions contains common options and helper methods
@@ -59,76 +59,28 @@ func (f *ServerFlags) IsEmpty() bool {
 	return f.ServerName == "" && f.ServerURL == ""
 }
 
-func addGitRepoOptionsArguments(cmd *cobra.Command, repositoryOptions *gits.GitRepositoryOptions) {
-	cmd.Flags().StringVarP(&repositoryOptions.ServerURL, "git-provider-url", "", "", "The git server URL to create new git repositories inside")
-	cmd.Flags().StringVarP(&repositoryOptions.Username, "git-username", "", "", "The git username to use for creating new git repositories")
-	cmd.Flags().StringVarP(&repositoryOptions.ApiToken, "git-api-token", "", "", "The git API token to use for creating new git repositories")
+func (c *CommonOptions) Stdout() io.Writer {
+	if c.Out != nil {
+		return c.Out
+	}
+	return os.Stdout
 }
 
 func (c *CommonOptions) CreateTable() table.Table {
-	return c.Factory.CreateTable(c.Out)
+	return c.Factory.CreateTable(c.Stdout())
 }
 
+// Printf outputs the given text to the console
 func (c *CommonOptions) Printf(format string, a ...interface{}) (n int, err error) {
-	return fmt.Fprintf(c.Out, format, a...)
+	return fmt.Fprintf(c.Stdout(), format, a...)
 }
 
-func (o *CommonOptions) runCommandFromDir(dir, name string, args ...string) error {
-	e := exec.Command(name, args...)
-	if dir != "" {
-		e.Dir = dir
+// Debugf outputs the given text to the console if verbose mode is enabled
+func (c *CommonOptions) Debugf(format string, a ...interface{}) (n int, err error) {
+	if c.Verbose {
+		return fmt.Fprintf(c.Stdout(), format, a...)
 	}
-	e.Stdout = o.Out
-	e.Stderr = o.Err
-	err := e.Run()
-	if err != nil {
-		o.Printf("Error: Command failed  %s %s\n", name, strings.Join(args, " "))
-	}
-	return err
-}
-
-func (o *CommonOptions) runCommand(name string, args ...string) error {
-	e := exec.Command(name, args...)
-	e.Stdout = o.Out
-	e.Stderr = o.Err
-	err := e.Run()
-	if err != nil {
-		o.Printf("Error: Command failed  %s %s\n", name, strings.Join(args, " "))
-	}
-	return err
-}
-
-func (o *CommonOptions) runCommandQuietly(name string, args ...string) error {
-	e := exec.Command(name, args...)
-	e.Stdout = o.Out
-	e.Stderr = o.Err
-	return e.Run()
-}
-
-func (o *CommonOptions) runCommandInteractive(interactive bool, name string, args ...string) error {
-	e := exec.Command(name, args...)
-	e.Stdout = o.Out
-	e.Stderr = o.Err
-	if interactive {
-		e.Stdin = os.Stdin
-	}
-	err := e.Run()
-	if err != nil {
-		o.Printf("Error: Command failed  %s %s\n", name, strings.Join(args, " "))
-	}
-	return err
-}
-
-// getCommandOutput evaluates the given command and returns the trimmed output
-func (o *CommonOptions) getCommandOutput(dir string, name string, args ...string) (string, error) {
-	e := exec.Command(name, args...)
-	if dir != "" {
-		e.Dir = dir
-	}
-	data, err := e.CombinedOutput()
-	text := string(data)
-	text = strings.TrimSpace(text)
-	return text, err
+	return 0, nil
 }
 
 func (options *CommonOptions) addCommonFlags(cmd *cobra.Command) {
@@ -190,29 +142,6 @@ func (o *CommonOptions) JXClientAndDevNamespace() (*versioned.Clientset, string,
 	return o.jxClient, o.devNamespace, nil
 }
 
-func (o *CommonOptions) GitServerKind(gitInfo *gits.GitRepositoryInfo) (string, error) {
-	jxClient, devNs, err := o.JXClientAndDevNamespace()
-	if err != nil {
-		return "", err
-	}
-
-	kubeClient, _, err := o.KubeClient()
-	if err != nil {
-		return "", err
-	}
-
-	apisClient, err := o.Factory.CreateApiExtensionsClient()
-	if err != nil {
-		return "", err
-	}
-	err = kube.RegisterGitServiceCRD(apisClient)
-	if err != nil {
-		return "", err
-	}
-
-	return kube.GetGitServiceKind(jxClient, kubeClient, devNs, gitInfo.HostURL())
-}
-
 func (o *CommonOptions) JenkinsClient() (*gojenkins.Jenkins, error) {
 	if o.jenkinsClient == nil {
 		jenkins, err := o.Factory.CreateJenkinsClient()
@@ -237,23 +166,6 @@ func (o *CommonOptions) warnf(format string, a ...interface{}) {
 	o.Printf(util.ColorWarning("WARNING: "+format), a...)
 }
 
-// gitProviderForURL returns a GitProvider for the given git URL
-func (o *CommonOptions) gitProviderForURL(gitURL string, message string) (gits.GitProvider, error) {
-	gitInfo, err := gits.ParseGitURL(gitURL)
-	if err != nil {
-		return nil, err
-	}
-	authConfigSvc, err := o.Factory.CreateGitAuthConfigServiceForURL(gitInfo.HostURL())
-	if err != nil {
-		return nil, err
-	}
-	gitKind, err := o.GitServerKind(gitInfo)
-	if err != nil {
-		return nil, err
-	}
-	return gitInfo.PickOrCreateProvider(authConfigSvc, message, o.BatchMode, gitKind)
-}
-
 func (o *ServerFlags) addGitServerFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.ServerName, optionServerName, "n", "", "The name of the git server to add a user")
 	cmd.Flags().StringVarP(&o.ServerURL, optionServerURL, "u", "", "The URL of the git server to add a user")
@@ -261,26 +173,45 @@ func (o *ServerFlags) addGitServerFlags(cmd *cobra.Command) {
 
 // findGitServer finds the git server from the given flags or returns an error
 func (o *CommonOptions) findGitServer(config *auth.AuthConfig, serverFlags *ServerFlags) (*auth.AuthServer, error) {
-	return o.findServer(config, serverFlags, "git server", "Try creating one via: jx create git server")
+	return o.findServer(config, serverFlags, "git", "Try creating one via: jx create git server", false)
 }
 
-// findGitServer finds the issue tracker server from the given flags or returns an error
+// findIssueTrackerServer finds the issue tracker server from the given flags or returns an error
 func (o *CommonOptions) findIssueTrackerServer(config *auth.AuthConfig, serverFlags *ServerFlags) (*auth.AuthServer, error) {
-	return o.findServer(config, serverFlags, "issue tracker server", "Try creating one via: jx create tracker server")
+	return o.findServer(config, serverFlags, "issues", "Try creating one via: jx create tracker server", false)
 }
 
-func (o *CommonOptions) findServer(config *auth.AuthConfig, serverFlags *ServerFlags, kind string, missingServerDescription string) (*auth.AuthServer, error) {
+// findChatServer finds the chat server from the given flags or returns an error
+func (o *CommonOptions) findChatServer(config *auth.AuthConfig, serverFlags *ServerFlags) (*auth.AuthServer, error) {
+	return o.findServer(config, serverFlags, "chat", "Try creating one via: jx create chat server", false)
+}
+
+// findAddonServer finds the addon server from the given flags or returns an error
+func (o *CommonOptions) findAddonServer(config *auth.AuthConfig, serverFlags *ServerFlags, kind string) (*auth.AuthServer, error) {
+	return o.findServer(config, serverFlags, kind, "Try creating one via: jx create addon", true)
+}
+
+func (o *CommonOptions) findServer(config *auth.AuthConfig, serverFlags *ServerFlags, defaultKind string, missingServerDescription string, lazyCreate bool) (*auth.AuthServer, error) {
+	kind := defaultKind
 	var server *auth.AuthServer
 	if serverFlags.ServerURL != "" {
 		server = config.GetServer(serverFlags.ServerURL)
 		if server == nil {
+			if lazyCreate {
+				return config.GetOrCreateServerName(serverFlags.ServerURL, serverFlags.ServerName, kind), nil
+			}
 			return nil, util.InvalidOption(optionServerURL, serverFlags.ServerURL, config.GetServerURLs())
 		}
 	}
 	if server == nil && serverFlags.ServerName != "" {
-		server = config.GetServerByName(serverFlags.ServerName)
+		name := serverFlags.ServerName
+		if lazyCreate {
+			server = config.GetOrCreateServerName(serverFlags.ServerURL, name, kind)
+		} else {
+			server = config.GetServerByName(name)
+		}
 		if server == nil {
-			return nil, util.InvalidOption(optionServerName, serverFlags.ServerName, config.GetServerNames())
+			return nil, util.InvalidOption(optionServerName, name, config.GetServerNames())
 		}
 	}
 	if server == nil {
@@ -424,99 +355,6 @@ func (o *CommonOptions) findServiceInNamespace(name string, ns string) (string, 
 	return url, nil
 }
 
-func (o *CommonOptions) registerLocalHelmRepo(repoName, ns string) error {
-	if repoName == "" {
-		repoName = kube.LocalHelmRepoName
-	}
-	// TODO we should use the auth package to keep a list of server login/pwds
-	// TODO we have a chartmuseumAuth.yaml now but sure yet if that's the best thing to do
-	username := "admin"
-	password := "admin"
-
-	// lets check if we have a local helm repository
-	client, _, err := o.Factory.CreateClient()
-	if err != nil {
-		return err
-	}
-	u, err := kube.FindServiceURL(client, ns, kube.ServiceChartMuseum)
-	if err != nil {
-		return err
-	}
-	u2, err := url.Parse(u)
-	if err != nil {
-		return err
-	}
-	if u2.User == nil {
-		u2.User = url.UserPassword(username, password)
-	}
-	helmUrl := u2.String()
-	// lets check if we already have the helm repo installed or if we need to add it or remove + add it
-	text, err := o.getCommandOutput("", "helm", "repo", "list")
-	if err != nil {
-		return err
-	}
-	lines := strings.Split(text, "\n")
-	remove := false
-	for _, line := range lines {
-		t := strings.TrimSpace(line)
-		if t != "" {
-			fields := strings.Fields(t)
-			if len(fields) > 1 {
-				if fields[0] == repoName {
-					if fields[1] == helmUrl {
-						return nil
-					} else {
-						remove = true
-					}
-				}
-			}
-		}
-	}
-	if remove {
-		err = o.runCommand("helm", "repo", "remove", repoName)
-		if err != nil {
-			return err
-		}
-	}
-	return o.runCommand("helm", "repo", "add", repoName, helmUrl)
-}
-
-// installChart installs the given chart
-func (o *CommonOptions) installChart(releaseName string, chart string, version string, ns string, helmUpdate bool) error {
-	if helmUpdate {
-		err := o.runCommand("helm", "repo", "update")
-		if err != nil {
-			return err
-		}
-	}
-	timeout := fmt.Sprintf("--timeout=%s", defaultInstallTimeout)
-	args := []string{"upgrade", "--install", timeout}
-	if version != "" {
-		args = append(args, "--version", version)
-	}
-	if ns != "" {
-		kubeClient, _, err := o.KubeClient()
-		if err != nil {
-			return err
-		}
-		annotations := map[string]string{"jenkins-x.io/created-by": "Jenkins X"}
-		kube.EnsureNamespaceCreated(kubeClient, ns, nil, annotations)
-		args = append(args, "--namespace", ns)
-	}
-	args = append(args, releaseName, chart)
-	return o.runCommand("helm", args...)
-}
-
-// deleteChart deletes the given chart
-func (o *CommonOptions) deleteChart(releaseName string, purge bool) error {
-	args := []string{"delete"}
-	if purge {
-		args = append(args, "--purge")
-	}
-	args = append(args, releaseName)
-	return o.runCommand("helm", args...)
-}
-
 func (o *CommonOptions) retry(attempts int, sleep time.Duration, call func() error) (err error) {
 	for i := 0; ; i++ {
 		err = call()
@@ -570,8 +408,8 @@ func (o *CommonOptions) retryQuiet(attempts int, sleep time.Duration, call func(
 	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
 }
 
-func (o *CommonOptions) getJobMap(filter string) (map[string]*gojenkins.Job, error) {
-	jobMap := map[string]*gojenkins.Job{}
+func (o *CommonOptions) getJobMap(filter string) (map[string]gojenkins.Job, error) {
+	jobMap := map[string]gojenkins.Job{}
 	jenkins, err := o.JenkinsClient()
 	if err != nil {
 		return jobMap, err
@@ -584,17 +422,18 @@ func (o *CommonOptions) getJobMap(filter string) (map[string]*gojenkins.Job, err
 	return jobMap, nil
 }
 
-func (o *CommonOptions) addJobs(jobMap *map[string]*gojenkins.Job, filter string, prefix string, jobs []gojenkins.Job) {
+func (o *CommonOptions) addJobs(jobMap *map[string]gojenkins.Job, filter string, prefix string, jobs []gojenkins.Job) {
 	jenkins, err := o.JenkinsClient()
 	if err != nil {
 		return
 	}
+
 	for _, j := range jobs {
 		name := jobName(prefix, &j)
-
 		if IsPipeline(&j) {
 			if filter == "" || strings.Contains(name, filter) {
-				(*jobMap)[name] = &j
+				(*jobMap)[name] = j
+				continue
 			}
 		}
 		if j.Jobs != nil {
@@ -650,66 +489,34 @@ func (o *CommonOptions) pickRemoteURL(config *gitcfg.Config) (string, error) {
 	return url, nil
 }
 
-func (*CommonOptions) FindHelmChart() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	// lets try find the chart file
-	chartFile := filepath.Join(dir, "Chart.yaml")
-	exists, err := util.FileExists(chartFile)
-	if err != nil {
-		return "", err
-	}
-	if !exists {
-		// lets try find all the chart files
-		files, err := filepath.Glob("*/Chart.yaml")
-		if err != nil {
-			return "", err
-		}
-		if len(files) > 0 {
-			chartFile = files[0]
-		} else {
-			files, err = filepath.Glob("*/*/Chart.yaml")
-			if err != nil {
-				return "", err
-			}
-			if len(files) > 0 {
-				chartFile = files[0]
-				return chartFile, nil
-			}
-		}
-	}
-	return "", nil
-}
+// todo switch to using exposecontroller as a jx plugin
+// get existing config from the devNamespace and run exposecontroller in the target environment
+func (o *CommonOptions) expose(devNamespace, targetNamespace, releaseName string) error {
 
-func (o *CommonOptions) discoverGitURL(gitConf string) (string, error) {
-	if gitConf == "" {
-		return "", fmt.Errorf("No GitConfDir defined!")
-	}
-	cfg := gitcfg.NewConfig()
-	data, err := ioutil.ReadFile(gitConf)
+	exposecontrollerConfig, err := kube.GetTeamExposecontrollerConfig(o.kubeClient, devNamespace)
 	if err != nil {
-		return "", fmt.Errorf("Failed to load %s due to %s", gitConf, err)
+		return fmt.Errorf("cannot get existing team exposecontroller config from namespace %s: %v", devNamespace, err)
 	}
 
-	err = cfg.Unmarshal(data)
-	if err != nil {
-		return "", fmt.Errorf("Failed to unmarshal %s due to %s", gitConf, err)
-	}
-	remotes := cfg.Remotes
-	if len(remotes) == 0 {
-		return "", nil
-	}
-	url := gits.GetRemoteUrl(cfg, "origin")
-	if url == "" {
-		url = gits.GetRemoteUrl(cfg, "upstream")
-		if url == "" {
-			url, err = o.pickRemoteURL(cfg)
-			if err != nil {
-				return "", err
-			}
+	var exValues []string
+	if targetNamespace != devNamespace {
+		// run exposecontroller using existing team config
+		exValues = []string{
+			"config.exposer=" + exposecontrollerConfig["exposer"],
+			"config.domain=" + exposecontrollerConfig["domain"],
+			"config.http=" + exposecontrollerConfig["http"],
+			"config.tls-acme=" + exposecontrollerConfig["tls-acme"],
 		}
 	}
-	return url, nil
+
+	err = o.installChart("expose"+releaseName, exposecontrollerChart, exposecontrollerVersion, targetNamespace, true, exValues)
+	if err != nil {
+		return fmt.Errorf("exposecontroller deployment failed: %v", err)
+	}
+	err = kube.WaitForJobToSucceeded(o.kubeClient, targetNamespace, exposecontroller, 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed waiting for exposecontroller job to succeed: %v", err)
+	}
+	return kube.DeleteJob(o.kubeClient, targetNamespace, exposecontroller)
+
 }
