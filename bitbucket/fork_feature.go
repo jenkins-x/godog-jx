@@ -1,22 +1,16 @@
 package bitbucket
 
 import (
+	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/jenkins-x/godog-jx/utils"
 )
 
-type ForkFeature struct {
-	GitCommander *GitCommander
-
-	UpstreamDir    string
-	ForkDir        string
-	ForkedRepoName string
-}
-
-// ForkToUsersRepo forks the given upstream repo cleanly to the current github users account
+// ForkToUsersRepo forks the given upstream repo cleanly to the current bitbucket users account
 func (f *ForkFeature) ForkToUsersRepo(uptreamRepoName string) (string, error) {
-	gitcmder := f.GitCommander
+	gitcmder := f.Context.GitCommander
 	err := gitcmder.DeleteWorkDir()
 	if err != nil {
 		return "", err
@@ -44,7 +38,7 @@ func (f *ForkFeature) iForkTheBitbucketRepoToTheCurrentUser(originalRepoName str
 	if err != nil {
 		return err
 	}
-	gitcmder := f.GitCommander
+	gitcmder := f.Context.GitCommander
 	gitcmder.UseHttps = true
 
 	upstreamRepo, err := GetRepository(provider, userRepo.Organisation, userRepo.Repository)
@@ -95,4 +89,36 @@ func (f *ForkFeature) iForkTheBitbucketRepoToTheCurrentUser(originalRepoName str
 	}
 
 	return nil
+}
+
+func (f *ForkFeature) thereIsNoForkOf(repo string) error {
+	gitcmder := f.Context.GitCommander
+	err := gitcmder.DeleteWorkDir()
+	if err != nil {
+		return err
+	}
+
+	path := filepath.Join(f.Context.GitCommander.Dir, repo)
+	return AssertFileDoesNotExist(path)
+}
+
+func (f *ForkFeature) thereShouldBeAForkForTheCurrentUserWhichHasTheSameLastCommitAs(forkedRepo string) error {
+	gitcmder := f.Context.GitCommander
+	upstreamSha, err := gitcmder.GetLastCommitSha(f.UpstreamDir)
+	if err != nil {
+		return err
+	}
+	forkSha, err := gitcmder.GetLastCommitSha(f.ForkDir)
+	if err != nil {
+		return err
+	}
+	utils.LogInfof("upstream last commit is %s\n", upstreamSha)
+	utils.LogInfof("fork last commit is %s\n", forkSha)
+
+	errors := CreateErrorSlice()
+	assert := CreateAssert(errors)
+
+	msg := fmt.Sprintf("The git sha on the fork should be the same as the upstream repository in dir %s and %s", f.ForkDir, f.UpstreamDir)
+	assert.Equal(upstreamSha, forkSha, msg)
+	return errors.Error()
 }
