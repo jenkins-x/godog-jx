@@ -26,7 +26,7 @@ var (
 	cdx_long = templates.LongDesc(`
 		Opens the CDX dashboard in a browser.
 
-		Which helps you visualise your CI / CD pipelines, apps, environments and teams.
+		Which helps you visualise your CI/CD pipelines, apps, environments and teams.
 `)
 	cdx_example = templates.Examples(`
 		# Open the CDX dashboard in a browser
@@ -46,7 +46,7 @@ func NewCmdCDX(f cmdutil.Factory, out io.Writer, errOut io.Writer) *cobra.Comman
 	}
 	cmd := &cobra.Command{
 		Use:     "cdx",
-		Short:   "Opens the CDX dashboard for visualising CI / CD and your environments",
+		Short:   "Opens the CDX dashboard for visualising CI/CD and your environments",
 		Long:    cdx_long,
 		Example: cdx_example,
 		Aliases: []string{"dashboard"},
@@ -62,17 +62,19 @@ func NewCmdCDX(f cmdutil.Factory, out io.Writer, errOut io.Writer) *cobra.Comman
 }
 
 func (o *CDXOptions) Run() error {
-	url, err := o.findService(kube.ServiceCDX)
+	f := o.Factory
+	client, ns, err := f.CreateClient()
 	if err != nil {
-		o.warnf("It looks like you are not running the CDX addon.\nDid you try running this command: 'jx create addon cdx'\n")
 		return err
 	}
+
+	url, err := kube.GetServiceURLFromName(client, kube.ServiceCDX, defaultCdxNamespace)
+	if err != nil {
+		return err
+	}
+
 	if appendTeam {
-		f := o.Factory
-		client, ns, err := f.CreateClient()
-		if err != nil {
-			return err
-		}
+
 		devNs, _, err := kube.GetDevNamespace(client, ns)
 		if err != nil {
 			return err

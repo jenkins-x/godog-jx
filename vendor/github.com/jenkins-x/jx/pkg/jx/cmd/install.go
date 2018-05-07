@@ -45,7 +45,7 @@ type InstallFlags struct {
 	CloudEnvRepository       string
 	LocalHelmRepoName        string
 	Namespace                string
-	DefaultEnvironments      bool
+	NoDefaultEnvironments    bool
 	HelmTLS                  bool
 	DefaultEnvironmentPrefix string
 	LocalCloudEnvironment    bool
@@ -180,7 +180,7 @@ func (options *InstallOptions) addInstallFlags(cmd *cobra.Command, includesInit 
 	flags := &options.Flags
 	cmd.Flags().StringVarP(&flags.CloudEnvRepository, "cloud-environment-repo", "", DEFAULT_CLOUD_ENVIRONMENTS_URL, "Cloud Environments git repo")
 	cmd.Flags().StringVarP(&flags.LocalHelmRepoName, "local-helm-repo-name", "", kube.LocalHelmRepoName, "The name of the helm repository for the installed Chart Museum")
-	cmd.Flags().BoolVarP(&flags.DefaultEnvironments, "default-environments", "", true, "Creates default Staging and Production environments")
+	cmd.Flags().BoolVarP(&flags.NoDefaultEnvironments, "no-default-environments", "", false, "Disables the creation of the default Staging and Production environments")
 	cmd.Flags().StringVarP(&flags.DefaultEnvironmentPrefix, "default-environment-prefix", "", "", "Default environment repo prefix, your git repos will be of the form 'environment-$prefix-$envName'")
 	cmd.Flags().BoolVarP(&flags.LocalCloudEnvironment, "local-cloud-environment", "", false, "Ignores default cloud-environment-repo and uses current directory ")
 	cmd.Flags().StringVarP(&flags.Namespace, "namespace", "", "jx", "The namespace the Jenkins X platform should be installed into")
@@ -228,16 +228,59 @@ func (options *InstallOptions) Run() error {
 		return err
 	}
 
+	err = options.installRequirements(options.Flags.Provider)
+	if err != nil {
+		return err
+	}
+
 	initOpts := &options.InitOptions
 	initOpts.Flags.Provider = options.Flags.Provider
 	initOpts.Flags.Namespace = options.Flags.Namespace
 	initOpts.BatchMode = options.BatchMode
+
+	currentContext, err := options.getCommandOutput("", "kubectl", "config", "current-context")
+	if err != nil {
+		return err
+	}
+	if currentContext == "minikube" {
+		if options.Flags.Provider == "" {
+			options.Flags.Provider = MINIKUBE
+		}
+		ip, err := options.getCommandOutput("", "minikube", "ip")
+		if err != nil {
+			return err
+		}
+		options.Flags.Domain = ip + ".nip.io"
+	}
+
 	if initOpts.Flags.Domain == "" && options.Flags.Domain != "" {
 		initOpts.Flags.Domain = options.Flags.Domain
 	}
+
+	// lets default the helm domain
+	exposeController := options.CreateEnvOptions.HelmValuesConfig.ExposeController
+	if exposeController != nil && exposeController.Config.Domain == "" && options.Flags.Domain != "" {
+		exposeController.Config.Domain = options.Flags.Domain
+		log.Success("set exposeController Config Domain " + exposeController.Config.Domain + "\n")
+	} else {
+		log.Error("Did not set exposeController Config Domain\n")
+	}
+	if exposeController != nil {
+		if isOpenShiftProvider(options.Flags.Provider) {
+			exposeController.Config.Exposer = "Route"
+		}
+	}
+
 	err = initOpts.Run()
 	if err != nil {
 		return err
+	}
+
+	if isOpenShiftProvider(options.Flags.Provider) {
+		err = options.enableOpenShiftSCC(ns)
+		if err != nil {
+			return err
+		}
 	}
 
 	// share the init domain option with the install options
@@ -333,6 +376,8 @@ func (options *InstallOptions) Run() error {
 	arg := fmt.Sprintf("ARGS=--values=%s --values=%s --values=%s --namespace=%s --timeout=%s", secretsFileName, adminSecretsFileName, configFileName, ns, timeout)
 
 	// run the helm install
+	options.Printf("Installing Jenkins X platform helm chart from: %s\n", makefileDir)
+
 	err = options.runCommandFromDir(makefileDir, "make", arg, "install")
 	if err != nil {
 		return err
@@ -372,7 +417,7 @@ func (options *InstallOptions) Run() error {
 
 	options.logAdminPassword()
 
-	if options.Flags.DefaultEnvironments {
+	if !options.Flags.NoDefaultEnvironments {
 		log.Info("Getting Jenkins API Token\n")
 		err = options.retry(3, 2*time.Second, func() (err error) {
 			options.CreateJenkinsUserOptions.Password = options.AdminSecretsService.Flags.DefaultAdminPassword
@@ -442,6 +487,33 @@ func (options *InstallOptions) Run() error {
 	options.Printf("\nTo import existing projects into Jenkins: %s\n", util.ColorInfo("jx import"))
 	options.Printf("To create a new Spring Boot microservice: %s\n", util.ColorInfo("jx create spring -d web -d actuator"))
 	return nil
+}
+
+func isOpenShiftProvider(provider string) bool {
+	switch provider {
+	case OPENSHIFT, MINISHIFT:
+		return true
+	default:
+		return false
+	}
+}
+
+func (o *InstallOptions) enableOpenShiftSCC(ns string) error {
+	o.Printf("Enabling anyui for the Jenkins service account in namespace %s\n", ns)
+	err := o.runCommand("oc", "adm", "policy", "add-scc-to-user", "anyuid", "system:serviceaccount:"+ns+":jenkins")
+	if err != nil {
+		return err
+	}
+	err = o.runCommand("oc", "adm", "policy", "add-scc-to-user", "hostaccess", "system:serviceaccount:"+ns+":jenkins")
+	if err != nil {
+		return err
+	}
+	err = o.runCommand("oc", "adm", "policy", "add-scc-to-user", "privileged", "system:serviceaccount:"+ns+":jenkins")
+	if err != nil {
+		return err
+	}
+	// try fix monocular
+	return o.runCommand("oc", "adm", "policy", "add-scc-to-user", "anyuid", "system:serviceaccount:"+ns+":default")
 }
 
 func (options *InstallOptions) logAdminPassword() {
@@ -551,7 +623,7 @@ func (o *InstallOptions) getGitToken() (string, string, error) {
 			return username, os.Getenv(JX_GIT_TOKEN), nil
 		}
 	}
-	o.Printf("Lets set up a git username and API token to be able to perform CI / CD\n\n")
+	o.Printf("Lets set up a git username and API token to be able to perform CI/CD\n\n")
 	userAuth, err := o.getGitUser("")
 	if err != nil {
 		return "", "", err
@@ -589,7 +661,7 @@ func (options *InstallOptions) saveChartmuseumAuthConfig() error {
 		}
 		server = config.GetOrCreateServer(url)
 	} else {
-		server, err = options.findServer(config, &options.ServerFlags, "chartmuseum server", "Try installing one via: jx create team")
+		server, err = options.findServer(config, &options.ServerFlags, "chartmuseum server", "Try installing one via: jx create team", false)
 		if err != nil {
 			return err
 		}
@@ -605,6 +677,7 @@ func (options *InstallOptions) saveChartmuseumAuthConfig() error {
 	config.CurrentServer = server.URL
 	return authConfigSvc.SaveConfig()
 }
+
 func (o *InstallOptions) getGitUser(message string) (*auth.UserAuth, error) {
 	var userAuth *auth.UserAuth
 	authConfigSvc, err := o.Factory.CreateGitAuthConfigService()

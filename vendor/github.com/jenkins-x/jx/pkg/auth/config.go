@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -94,6 +95,7 @@ func urlsEqual(url1, url2 string) bool {
 	return url1 == url2 || strings.TrimSuffix(url1, "/") == strings.TrimSuffix(url2, "/")
 }
 
+// GetServerByName returns the server for the given URL or null if its not found
 func (c *AuthConfig) GetServer(url string) *AuthServer {
 	for _, s := range c.Servers {
 		if urlsEqual(s.URL, url) {
@@ -103,6 +105,7 @@ func (c *AuthConfig) GetServer(url string) *AuthServer {
 	return nil
 }
 
+// GetServerByName returns the server for the given name or null if its not found
 func (c *AuthConfig) GetServerByName(name string) *AuthServer {
 	for _, s := range c.Servers {
 		if s.Name == name {
@@ -112,19 +115,29 @@ func (c *AuthConfig) GetServerByName(name string) *AuthServer {
 	return nil
 }
 
+// GetServerByKind returns the server for the given kind or null if its not found
+func (c *AuthConfig) GetServerByKind(kind string) *AuthServer {
+	for _, s := range c.Servers {
+		if s.Kind == kind && s.URL == c.CurrentServer {
+			return s
+		}
+	}
+	return nil
+}
+
 func (c *AuthConfig) GetOrCreateServer(url string) *AuthServer {
 	name := ""
 	kind := ""
-	if url == "github.com" || strings.HasPrefix(url, "https://github.com") {
-		name = "GitHub"
-		kind = "github"
-	}
 	return c.GetOrCreateServerName(url, name, kind)
 }
 
 func (c *AuthConfig) GetOrCreateServerName(url string, name string, kind string) *AuthServer {
 	s := c.GetServer(url)
 	if s == nil {
+		if name == "" {
+			// lets default the name to the server URL
+			name = urlHostName(url)
+		}
 		if c.Servers == nil {
 			c.Servers = []*AuthServer{}
 		}
@@ -137,6 +150,18 @@ func (c *AuthConfig) GetOrCreateServerName(url string, name string, kind string)
 		c.Servers = append(c.Servers, s)
 	}
 	return s
+}
+
+func urlHostName(rawUrl string) string {
+	u, err := url.Parse(rawUrl)
+	if err == nil {
+		return u.Host
+	}
+	idx := strings.Index(rawUrl, "://")
+	if idx > 0 {
+		rawUrl = rawUrl[idx+3:]
+	}
+	return strings.TrimSuffix(rawUrl, "/")
 }
 
 func (c *AuthConfig) PickServer(message string, batchMode bool) (*AuthServer, error) {
@@ -219,11 +244,15 @@ func (c *AuthConfig) PickServerUserAuth(server *AuthServer, message string, batc
 			Message: message,
 			Options: usernames,
 		}
-		err := survey.AskOne(prompt, &username, nil)
+		err := survey.AskOne(prompt, &username, survey.Required)
 		if err != nil {
 			return &UserAuth{}, err
 		}
-		return m[username], nil
+		answer := m[username]
+		if answer == nil {
+			return nil, fmt.Errorf("No username chosen!")
+		}
+		return answer, nil
 	}
 	return &UserAuth{}, nil
 }

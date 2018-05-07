@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jenkins-x/jx/pkg/auth"
 	"github.com/jenkins-x/jx/pkg/util"
@@ -25,8 +26,8 @@ const (
 func FindGitConfigDir(dir string) (string, string, error) {
 	d := dir
 	var err error
-	if dir == "" {
-		dir, err = os.Getwd()
+	if d == "" {
+		d, err = os.Getwd()
 		if err != nil {
 			return "", "", err
 		}
@@ -50,7 +51,6 @@ func FindGitConfigDir(dir string) (string, string, error) {
 		}
 		d = p
 	}
-
 }
 
 // GitClone clones the given git URL into the given directory
@@ -230,11 +230,20 @@ func GetGitServer(dir string) (string, error) {
 }
 
 func GetGitInfo(dir string) (*GitRepositoryInfo, error) {
-	e := exec.Command("git", "config", "--get", "remote.origin.url")
+	e := exec.Command("git", "status")
 	if dir != "" {
 		e.Dir = dir
 	}
 	data, err := e.CombinedOutput()
+	if err != nil && strings.Contains(string(data), "Not a git repository") {
+		return nil, fmt.Errorf("you are not in a Git repository - promotion command should be executed from an application directory")
+	}
+
+	e = exec.Command("git", "config", "--get", "remote.origin.url")
+	if dir != "" {
+		e.Dir = dir
+	}
+	data, err = e.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run git commit in %s due to %s", dir, err)
 	}
@@ -385,6 +394,29 @@ func GetPreviousGitTagSHA(dir string) (string, error) {
 	return util.GetCommandOutput(dir, "git", "rev-list", "--tags", "--skip=2", "--max-count=1")
 }
 
+// GetRevisionBeforeDate returns the revision before the given date
+func GetRevisionBeforeDate(dir string, t time.Time) (string, error) {
+	dateText := FormatDate(t)
+	return GetRevisionBeforeDateText(dir, dateText)
+}
+
+// GetRevisionBeforeDateText returns the revision before the given date in format "MonthName dayNumber year"
+func GetRevisionBeforeDateText(dir string, dateText string) (string, error) {
+	branch, err := GitGetBranch(dir)
+	if err != nil {
+		return "", err
+	}
+	return util.GetCommandOutput(dir, "git", "rev-list", "-1", "--before=\""+dateText+"\"", "--max-count=1", branch)
+}
+
+func FormatDate(t time.Time) string {
+	return fmt.Sprintf("%s %d %d", t.Month().String(), t.Day(), t.Year())
+}
+
+func ParseDate(dateText string) (time.Time, error) {
+	return time.Parse(DateFormat, dateText)
+}
+
 func GetCurrentGitTagSHA(dir string) (string, error) {
 	return util.GetCommandOutput(dir, "git", "rev-list", "--tags", "--max-count=1")
 }
@@ -420,4 +452,20 @@ func ToGitLabels(names []string) []GitLabel {
 		answer = append(answer, GitLabel{Name: n})
 	}
 	return answer
+}
+
+// GetHost returns the Git Provider hostname, e.g github.com
+func GetHost(gitProvider GitProvider) (string, error) {
+	if gitProvider == nil {
+		return "", fmt.Errorf("no git provider")
+	}
+
+	if gitProvider.ServerURL() == "" {
+		return "", fmt.Errorf("no git provider server URL found")
+	}
+	url, err := url.Parse(gitProvider.ServerURL())
+	if err != nil {
+		return "", fmt.Errorf("error parsing ")
+	}
+	return url.Host, nil
 }

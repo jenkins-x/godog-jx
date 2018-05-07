@@ -8,9 +8,15 @@ import (
 	"time"
 
 	"github.com/google/go-github/github"
+	"github.com/jenkins-x/jx/pkg/apis/jenkins.io/v1"
 	"github.com/jenkins-x/jx/pkg/auth"
+	"github.com/jenkins-x/jx/pkg/jx/cmd/log"
 	"github.com/jenkins-x/jx/pkg/util"
 	"golang.org/x/oauth2"
+)
+
+const (
+	pageSize = 100
 )
 
 type GitHubProvider struct {
@@ -49,6 +55,9 @@ func NewGitHubProvider(server *auth.AuthServer, user *auth.UserAuth) (GitProvide
 }
 
 func GitHubEnterpriseApiEndpointURL(u string) string {
+	if IsGitHubServerURL(u) {
+		return u
+	}
 	// lets ensure we use the API endpoint to login
 	if strings.Index(u, "/api/") < 0 {
 		u = util.UrlJoin(u, "/api/v3/")
@@ -67,12 +76,12 @@ func (p *GitHubProvider) GetEnterpriseApiURL() string {
 }
 
 func IsGitHubServerURL(u string) bool {
-	return u == "" || strings.HasPrefix(u, "https://github.com") || strings.HasPrefix(u, "github")
+	u = strings.TrimSuffix(u, "/")
+	return u == "" || u == "https://github.com" || u == "http://github.com"
 }
 
 func (p *GitHubProvider) ListOrganisations() ([]GitOrganisation, error) {
 	answer := []GitOrganisation{}
-	pageSize := 100
 	options := github.ListOptions{
 		Page:    0,
 		PerPage: pageSize,
@@ -106,7 +115,6 @@ func (p *GitHubProvider) ListRepositories(org string) ([]*GitRepository, error) 
 		owner = p.Username
 	}
 	answer := []*GitRepository{}
-	pageSize := 100
 	options := &github.RepositoryListOptions{
 		ListOptions: github.ListOptions{
 			Page:    0,
@@ -127,6 +135,50 @@ func (p *GitHubProvider) ListRepositories(org string) ([]*GitRepository, error) 
 		options.ListOptions.Page += 1
 	}
 	return answer, nil
+}
+
+func (p *GitHubProvider) ListReleases(org string, name string) ([]*GitRelease, error) {
+	owner := org
+	if owner == "" {
+		owner = p.Username
+	}
+	answer := []*GitRelease{}
+	options := &github.ListOptions{
+		Page:    0,
+		PerPage: pageSize,
+	}
+	for {
+		repos, _, err := p.Client.Repositories.ListReleases(p.Context, owner, name, options)
+		if err != nil {
+			return answer, err
+		}
+		for _, repo := range repos {
+			answer = append(answer, toGitHubRelease(org, name, repo))
+		}
+		if len(repos) < pageSize || len(repos) == 0 {
+			break
+		}
+		options.Page += 1
+	}
+	return answer, nil
+}
+
+func toGitHubRelease(org string, name string, release *github.RepositoryRelease) *GitRelease {
+	totalDownloadCount := 0
+	for _, asset := range release.Assets {
+		p := asset.DownloadCount
+		if p != nil {
+			totalDownloadCount = totalDownloadCount + *p
+		}
+	}
+	return &GitRelease{
+		Name:          asText(release.Name),
+		TagName:       asText(release.TagName),
+		Body:          asText(release.Body),
+		URL:           asText(release.URL),
+		HTMLURL:       asText(release.HTMLURL),
+		DownloadCount: totalDownloadCount,
+	}
 }
 
 func (p *GitHubProvider) GetRepository(org string, name string) (*GitRepository, error) {
@@ -173,6 +225,7 @@ func toGitHubRepo(name string, repo *github.Repository) *GitRepository {
 		SSHURL:           asText(repo.SSHURL),
 		Fork:             asBool(repo.Fork),
 		Language:         asText(repo.Language),
+		Stars:            asInt(repo.StargazersCount),
 	}
 }
 
@@ -310,6 +363,9 @@ func (p *GitHubProvider) UpdatePullRequestStatus(pr *GitPullRequest) error {
 	} else {
 		pr.LastCommitSha = ""
 	}
+	if pr.Author == "" && result.User != nil && result.User.Login != nil {
+		pr.Author = *result.User.Login
+	}
 	if result.Mergeable != nil {
 		pr.Mergeable = result.Mergeable
 	}
@@ -335,7 +391,23 @@ func (p *GitHubProvider) UpdatePullRequestStatus(pr *GitPullRequest) error {
 	if result.DiffURL != nil {
 		pr.IssueURL = result.DiffURL
 	}
+	if result.Title != nil {
+		pr.Title = *result.Title
+	}
+	if result.Body != nil {
+		pr.Body = *result.Body
+	}
 	return nil
+}
+
+func (p *GitHubProvider) GetPullRequest(owner, repo string, number int) (*GitPullRequest, error) {
+	pr := &GitPullRequest{
+		Owner:  owner,
+		Repo:   repo,
+		Number: &number,
+	}
+	err := p.UpdatePullRequestStatus(pr)
+	return pr, err
 }
 
 func (p *GitHubProvider) MergePullRequest(pr *GitPullRequest, message string) error {
@@ -461,7 +533,7 @@ func (p *GitHubProvider) ValidateRepositoryName(org string, name string) error {
 	if err == nil {
 		return fmt.Errorf("Repository %s already exists", GitRepoName(org, name))
 	}
-	if r.StatusCode == 404 {
+	if r != nil && r.StatusCode == 404 {
 		return nil
 	}
 	return err
@@ -471,7 +543,7 @@ func (p *GitHubProvider) UpdateRelease(owner string, repo string, tag string, re
 	release := &github.RepositoryRelease{}
 	rel, r, err := p.Client.Repositories.GetReleaseByTag(p.Context, owner, repo, tag)
 
-	if r.StatusCode == 404 && !strings.HasPrefix(tag, "v") {
+	if r != nil && r.StatusCode == 404 && !strings.HasPrefix(tag, "v") {
 		// sometimes we prepend a v for example when using gh-release
 		// so lets make sure we don't create a double release
 		vtag := "v" + tag
@@ -498,7 +570,7 @@ func (p *GitHubProvider) UpdateRelease(owner string, repo string, tag string, re
 	if release.Body == nil && releaseInfo.Body != "" {
 		release.Body = &releaseInfo.Body
 	}
-	if r.StatusCode == 404 {
+	if r != nil && r.StatusCode == 404 {
 		fmt.Printf("No release found for %s/%s and tag %s so creating a new release\n", owner, repo, tag)
 		_, _, err = p.Client.Repositories.CreateRelease(p.Context, owner, repo, release)
 		return err
@@ -517,7 +589,7 @@ func (p *GitHubProvider) UpdateRelease(owner string, repo string, tag string, re
 
 func (p *GitHubProvider) GetIssue(org string, name string, number int) (*GitIssue, error) {
 	i, r, err := p.Client.Issues.Get(p.Context, org, name, number)
-	if r.StatusCode == 404 {
+	if r != nil && r.StatusCode == 404 {
 		return nil, nil
 	}
 	if err != nil {
@@ -528,25 +600,49 @@ func (p *GitHubProvider) GetIssue(org string, name string, number int) (*GitIssu
 
 func (p *GitHubProvider) SearchIssues(org string, name string, filter string) ([]*GitIssue, error) {
 	opts := &github.IssueListByRepoOptions{}
-	answer := []*GitIssue{}
-	issues, r, err := p.Client.Issues.ListByRepo(p.Context, org, name, opts)
-	if r.StatusCode == 404 {
-		return answer, nil
-	}
-	if err != nil {
-		return answer, err
-	}
-	for _, issue := range issues {
-		if issue.Number != nil {
-			n := *issue.Number
-			i, err := p.fromGithubIssue(org, name, n, issue)
-			if err != nil {
-				return answer, err
-			}
+	return p.searchIssuesWithOptions(org, name, opts)
+}
 
-			// TODO apply the filter?
-			answer = append(answer, i)
+func (p *GitHubProvider) SearchIssuesClosedSince(org string, name string, t time.Time) ([]*GitIssue, error) {
+	opts := &github.IssueListByRepoOptions{
+		State: "closed",
+	}
+	issues, err := p.searchIssuesWithOptions(org, name, opts)
+	if err != nil {
+		return issues, err
+	}
+	issues = FilterIssuesClosedSince(issues, t)
+	return issues, nil
+}
+
+func (p *GitHubProvider) searchIssuesWithOptions(org string, name string, opts *github.IssueListByRepoOptions) ([]*GitIssue, error) {
+	opts.Page = 0
+	opts.PerPage = pageSize
+	answer := []*GitIssue{}
+	for {
+		issues, r, err := p.Client.Issues.ListByRepo(p.Context, org, name, opts)
+		if r != nil && r.StatusCode == 404 {
+			return answer, nil
 		}
+		if err != nil {
+			return answer, err
+		}
+		for _, issue := range issues {
+			if issue.Number != nil && !issue.IsPullRequest() {
+				n := *issue.Number
+				i, err := p.fromGithubIssue(org, name, n, issue)
+				if err != nil {
+					return answer, err
+				}
+
+				// TODO apply the filter?
+				answer = append(answer, i)
+			}
+		}
+		if len(issues) < pageSize || len(issues) == 0 {
+			break
+		}
+		opts.ListOptions.Page += 1
 	}
 	return answer, nil
 }
@@ -596,6 +692,7 @@ func (p *GitHubProvider) fromGithubIssue(org string, name string, number int, i 
 		IsPullRequest: isPull,
 		Labels:        labels,
 		User:          toGitHubUser(i.User),
+		ClosedAt:      i.ClosedAt,
 		ClosedBy:      toGitHubUser(i.ClosedBy),
 		Assignees:     assignees,
 	}, nil
@@ -647,7 +744,7 @@ func (p *GitHubProvider) IsGitea() bool {
 }
 
 func (p *GitHubProvider) Kind() string {
-	return "github"
+	return KindGitHub
 }
 
 func (p *GitHubProvider) JenkinsWebHookPath(gitURL string, secret string) string {
@@ -669,11 +766,37 @@ func (p *GitHubProvider) ServerURL() string {
 	return p.Server.URL
 }
 
+func (p *GitHubProvider) CurrentUsername() string {
+	return p.Username
+}
+
+func (p *GitHubProvider) UserInfo(username string) *v1.UserSpec {
+	user, _, err := p.Client.Users.Get(p.Context, username)
+	if user == nil || err != nil {
+		log.Error("Unable to fetch user info for " + username)
+		return nil
+	}
+
+	return &v1.UserSpec{
+		Username: username,
+		Name:     asText(user.Name),
+		ImageURL: asText(user.AvatarURL),
+		LinkURL:  asText(user.HTMLURL),
+	}
+}
+
 func asBool(b *bool) bool {
 	if b != nil {
 		return *b
 	}
 	return false
+}
+
+func asInt(i *int) int {
+	if i != nil {
+		return *i
+	}
+	return 0
 }
 
 func asText(text *string) string {

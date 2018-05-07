@@ -14,6 +14,7 @@ import (
 	"github.com/blang/semver"
 	"github.com/jenkins-x/jx/pkg/jx/cmd/log"
 	"github.com/jenkins-x/jx/pkg/util"
+	"github.com/pborman/uuid"
 	"gopkg.in/AlecAivazis/survey.v1"
 )
 
@@ -29,24 +30,34 @@ func (o *CommonOptions) doInstallMissingDependencies(install []string) error {
 	for _, i := range install {
 		var err error
 		switch i {
-		case "kubectl":
-			err = o.installKubectl()
-		case "hyperkit":
-			err = o.installHyperkit()
-		case "xhyve":
-			err = o.installXhyve()
-		case "virtualbox":
-			err = o.installVirtualBox()
-		case "helm":
-			err = o.installHelm()
-		case "gcloud":
-			err = o.installGcloud()
-		case "kops":
-			err = o.installKops()
-		case "minikube":
-			err = o.installMinikube()
 		case "az":
 			err = o.installAzureCli()
+		case "kubectl":
+			err = o.installKubectl()
+		case "gcloud":
+			err = o.installGcloud()
+		case "helm":
+			err = o.installHelm()
+		case "hyperkit":
+			err = o.installHyperkit()
+		case "kops":
+			err = o.installKops()
+		case "kvm":
+			err = o.installKvm()
+		case "kvm2":
+			err = o.installKvm2()
+		case "ksync":
+			_, err = o.installKSync()
+		case "minikube":
+			err = o.installMinikube()
+		case "minishift":
+			err = o.installMinishift()
+		case "oc":
+			err = o.installOc()
+		case "virtualbox":
+			err = o.installVirtualBox()
+		case "xhyve":
+			err = o.installXhyve()
 		default:
 			return fmt.Errorf("unknown dependency to install %s\n", i)
 		}
@@ -117,6 +128,22 @@ func (o *CommonOptions) downloadFile(clientURL string, fullPath string) error {
 	return nil
 }
 
+func (o *CommonOptions) installBrewIfRequired() error {
+	if runtime.GOOS != "darwin" || o.NoBrew {
+		return nil
+	}
+
+	binDir, err := util.BinaryLocation()
+	if err != nil {
+		return err
+	}
+	_, flag, err := o.shouldInstallBinary(binDir, "brew")
+	if err != nil || !flag {
+		return err
+	}
+	return o.installBrew()
+}
+
 func (o *CommonOptions) installKubectl() error {
 	if runtime.GOOS == "darwin" && !o.NoBrew {
 		return o.runCommand("brew", "install", "kubectl")
@@ -149,6 +176,87 @@ func (o *CommonOptions) installKubectl() error {
 	return os.Chmod(fullPath, 0755)
 }
 
+func (o *CommonOptions) installOc() error {
+	// need to fix the version we download as not able to work out the oc sha in the URL yet
+	sha := "191fece"
+	latestVersion := "3.9.0"
+
+	binDir, err := util.BinaryLocation()
+	if err != nil {
+		return err
+	}
+	binary := "oc"
+	fileName, flag, err := o.shouldInstallBinary(binDir, binary)
+	if err != nil || !flag {
+		return err
+	}
+
+	var arch string
+	clientURL := fmt.Sprintf("https://github.com/openshift/origin/releases/download/v%s/openshift-origin-client-tools-v%s-%s", latestVersion, latestVersion, sha)
+
+	extension := ".zip"
+	switch runtime.GOOS {
+	case "windows":
+		clientURL += "-windows.zip"
+	case "darwin":
+		clientURL += "-mac.zip"
+	default:
+		switch runtime.GOARCH {
+		case "amd64":
+			arch = "64bit"
+		case "386":
+			arch = "32bit"
+		}
+		extension = ".tar.gz"
+		clientURL += fmt.Sprintf("-%s-%s.tar.gz", runtime.GOOS, arch)
+	}
+
+	fullPath := filepath.Join(binDir, fileName)
+	tarFile := filepath.Join(binDir, "oc.tgz")
+	if extension == ".zip" {
+		tarFile = filepath.Join(binDir, "oc.zip")
+	}
+	err = o.downloadFile(clientURL, tarFile)
+	if err != nil {
+		return err
+	}
+
+	if extension == ".zip" {
+		zipDir := filepath.Join(binDir, "oc-tmp-"+uuid.NewUUID().String())
+		err = os.MkdirAll(zipDir, DefaultWritePermissions)
+		if err != nil {
+			return err
+		}
+		err = util.Unzip(tarFile, zipDir)
+		if err != nil {
+			return err
+		}
+		f := filepath.Join(zipDir, fileName)
+		exists, err := util.FileExists(f)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("Could not find file %s inside the downloaded oc.zip!", f)
+		}
+		err = os.Rename(f, fullPath)
+		if err != nil {
+			return err
+		}
+		err = os.RemoveAll(zipDir)
+	} else {
+		err = util.UnTargz(tarFile, binDir, []string{binary, fileName})
+	}
+	if err != nil {
+		return err
+	}
+	err = os.Remove(tarFile)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(fullPath, 0755)
+}
+
 // get the latest version from kubernetes, parse it and return it
 func (o *CommonOptions) getLatestVersionFromKubernetesReleaseUrl() (sem semver.Version, err error) {
 	response, err := http.Get(stableKubeCtlVersionURL)
@@ -171,35 +279,49 @@ func (o *CommonOptions) getLatestVersionFromKubernetesReleaseUrl() (sem semver.V
 }
 
 func (o *CommonOptions) installHyperkit() error {
-	info, err := o.getCommandOutput("", "docker-machine-driver-hyperkit")
-	if strings.Contains(info, "Docker") {
-		o.Printf("docker-machine-driver-hyperkit is already installed\n")
-		return nil
-	}
-	o.Printf("Result: %s and %v\n", info, err)
-	err = o.runCommand("curl", "-LO", "https://storage.googleapis.com/minikube/releases/latest/docker-machine-driver-hyperkit")
-	if err != nil {
-		return err
-	}
+	/*
+		info, err := o.getCommandOutput("", "docker-machine-driver-hyperkit")
+		if strings.Contains(info, "Docker") {
+			o.Printf("docker-machine-driver-hyperkit is already installed\n")
+			return nil
+		}
+		o.Printf("Result: %s and %v\n", info, err)
+		err = o.runCommand("curl", "-LO", "https://storage.googleapis.com/minikube/releases/latest/docker-machine-driver-hyperkit")
+		if err != nil {
+			return err
+		}
 
-	err = o.runCommand("chmod", "+x", "docker-machine-driver-hyperkit")
-	if err != nil {
-		return err
-	}
+		err = o.runCommand("chmod", "+x", "docker-machine-driver-hyperkit")
+		if err != nil {
+			return err
+		}
 
-	log.Warn("Installing hyperkit does require sudo to perform some actions, for more details see https://github.com/kubernetes/minikube/blob/master/docs/drivers.md#hyperkit-driver")
+		log.Warn("Installing hyperkit does require sudo to perform some actions, for more details see https://github.com/kubernetes/minikube/blob/master/docs/drivers.md#hyperkit-driver")
 
-	err = o.runCommand("sudo", "mv", "docker-machine-driver-hyperkit", "/usr/local/bin/")
-	if err != nil {
-		return err
-	}
+		err = o.runCommand("sudo", "mv", "docker-machine-driver-hyperkit", "/usr/local/bin/")
+		if err != nil {
+			return err
+		}
 
-	err = o.runCommand("sudo", "chown", "root:wheel", "/usr/local/bin/docker-machine-driver-hyperkit")
-	if err != nil {
-		return err
-	}
+		err = o.runCommand("sudo", "chown", "root:wheel", "/usr/local/bin/docker-machine-driver-hyperkit")
+		if err != nil {
+			return err
+		}
 
-	return o.runCommand("sudo", "chmod", "u+s", "/usr/local/bin/docker-machine-driver-hyperkit")
+		return o.runCommand("sudo", "chmod", "u+s", "/usr/local/bin/docker-machine-driver-hyperkit")
+	*/
+	return nil
+}
+
+func (o *CommonOptions) installKvm() error {
+	o.warnf("We cannot yet automate the installation of KVM - can you install this manually please?\nPlease see: https://www.linux-kvm.org/page/Downloads\n")
+	return nil
+}
+
+func (o *CommonOptions) installKvm2() error {
+	o.warnf("We cannot yet automate the installation of KVM with KVM2 driver - can you install this manually please?\nPlease see: https://www.linux-kvm.org/page/Downloads " +
+		"and https://github.com/kubernetes/minikube/blob/master/docs/drivers.md#kvm2-driver\n")
+	return nil
 }
 
 func (o *CommonOptions) installVirtualBox() error {
@@ -310,6 +432,37 @@ func (o *CommonOptions) installKops() error {
 	return os.Chmod(fullPath, 0755)
 }
 
+func (o *CommonOptions) installKSync() (bool, error) {
+	binDir, err := util.BinaryLocation()
+	if err != nil {
+		return false, err
+	}
+	binary := "ksync"
+	fileName, flag, err := o.shouldInstallBinary(binDir, binary)
+	if err != nil || !flag {
+		return false, err
+	}
+	latestVersion, err := util.GetLatestVersionFromGitHub("vapor-ware", "ksync")
+	if err != nil {
+		return false, err
+	}
+	clientURL := fmt.Sprintf("https://github.com/vapor-ware/ksync/releases/download/%s/ksync_%s_%s", latestVersion, runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		clientURL += ".exe"
+	}
+	fullPath := filepath.Join(binDir, fileName)
+	tmpFile := fullPath + ".tmp"
+	err = o.downloadFile(clientURL, tmpFile)
+	if err != nil {
+		return false, err
+	}
+	err = util.RenameFile(tmpFile, fullPath)
+	if err != nil {
+		return false, err
+	}
+	return true, os.Chmod(fullPath, 0755)
+}
+
 func (o *CommonOptions) installJx(upgrade bool, version string) error {
 	if runtime.GOOS == "darwin" && !o.NoBrew {
 		if upgrade {
@@ -386,6 +539,37 @@ func (o *CommonOptions) installMinikube() error {
 	return os.Chmod(fullPath, 0755)
 }
 
+func (o *CommonOptions) installMinishift() error {
+	if runtime.GOOS == "darwin" && !o.NoBrew {
+		return o.runCommand("brew", "cask", "install", "minishift")
+	}
+
+	binDir, err := util.BinaryLocation()
+	if err != nil {
+		return err
+	}
+	fileName, flag, err := o.shouldInstallBinary(binDir, "minishift")
+	if err != nil || !flag {
+		return err
+	}
+	latestVersion, err := util.GetLatestVersionFromGitHub("minishift", "minishift")
+	if err != nil {
+		return err
+	}
+	clientURL := fmt.Sprintf("https://github.com/minishift/minishift/releases/download/v%s/minikube-%s-%s", latestVersion, runtime.GOOS, runtime.GOARCH)
+	fullPath := filepath.Join(binDir, fileName)
+	tmpFile := fullPath + ".tmp"
+	err = o.downloadFile(clientURL, tmpFile)
+	if err != nil {
+		return err
+	}
+	err = util.RenameFile(tmpFile, fullPath)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(fullPath, 0755)
+}
+
 func (o *CommonOptions) installGcloud() error {
 	if runtime.GOOS != "darwin" || o.NoBrew {
 		return errors.New("please install missing gloud sdk - see https://cloud.google.com/sdk/downloads#interactive")
@@ -427,4 +611,73 @@ func (o *CommonOptions) GetCloudProvider(p string) (string, error) {
 		survey.AskOne(prompt, &p, nil)
 	}
 	return p, nil
+}
+
+func (o *CommonOptions) getClusterDependencies(deps []string) []string {
+	d := binaryShouldBeInstalled("kubectl")
+	if d != "" {
+		deps = append(deps, d)
+	}
+
+	d = binaryShouldBeInstalled("helm")
+	if d != "" {
+		deps = append(deps, d)
+	}
+
+	// Platform specific deps
+	if runtime.GOOS == "darwin" {
+		if !o.NoBrew {
+			d = binaryShouldBeInstalled("brew")
+			if d != "" {
+				deps = append(deps, d)
+			}
+		}
+	}
+	return deps
+}
+
+func (o *CommonOptions) installMissingDependencies(providerSpecificDeps []string) error {
+	// get base list of required dependencies and add provider specific ones
+	deps := o.getClusterDependencies(providerSpecificDeps)
+
+	if len(deps) == 0 {
+		return nil
+	}
+
+	if o.BatchMode {
+		return errors.New(fmt.Sprintf("run without batch mode or mannually install missing dependencies %v\n", deps))
+	}
+	install := []string{}
+	prompt := &survey.MultiSelect{
+		Message: "Missing required dependencies, deselect to avoid auto installing:",
+		Options: deps,
+		Default: deps,
+	}
+	survey.AskOne(prompt, &install, nil)
+
+	return o.doInstallMissingDependencies(install)
+}
+
+// installRequirements installs any requirements for the given provider kind
+func (o *CommonOptions) installRequirements(cloudProvider string) error {
+	var deps []string
+	switch cloudProvider {
+	case AWS:
+		deps = o.addRequiredBinary("kops", deps)
+	case AKS:
+		deps = o.addRequiredBinary("az", deps)
+	case GKE:
+		deps = o.addRequiredBinary("gcloud", deps)
+	case MINIKUBE:
+		deps = o.addRequiredBinary("minikube", deps)
+	}
+	return o.installMissingDependencies(deps)
+}
+
+func (o *CommonOptions) addRequiredBinary(binName string, deps []string) []string {
+	d := binaryShouldBeInstalled(binName)
+	if d != "" {
+		deps = append(deps, d)
+	}
+	return deps
 }

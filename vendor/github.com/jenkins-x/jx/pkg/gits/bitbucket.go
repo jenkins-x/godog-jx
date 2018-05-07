@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jenkins-x/jx/pkg/util"
 
+	"github.com/jenkins-x/jx/pkg/apis/jenkins.io/v1"
 	"github.com/jenkins-x/jx/pkg/auth"
+	"github.com/jenkins-x/jx/pkg/jx/cmd/log"
 	"github.com/wbrefvem/go-bitbucket"
 )
 
@@ -70,20 +73,29 @@ func (b *BitbucketCloudProvider) ListOrganisations() ([]GitOrganisation, error) 
 
 func BitbucketRepositoryToGitRepository(bRepo bitbucket.Repository) *GitRepository {
 	var sshURL string
+	var httpCloneURL string
 	for _, link := range bRepo.Links.Clone {
 		if link.Name == "ssh" {
 			sshURL = link.Href
 		}
 	}
-
 	isFork := false
 	if bRepo.Parent != nil {
 		isFork = true
 	}
+	if httpCloneURL == "" {
+		httpCloneURL = bRepo.Links.Html.Href
+		if !strings.HasSuffix(httpCloneURL, ".git") {
+			httpCloneURL += ".git"
+		}
+	}
+	if httpCloneURL == "" {
+		httpCloneURL = sshURL
+	}
 	return &GitRepository{
 		Name:     bRepo.Name,
 		HTMLURL:  bRepo.Links.Html.Href,
-		CloneURL: sshURL,
+		CloneURL: httpCloneURL,
 		SSHURL:   sshURL,
 		Language: bRepo.Language,
 		Fork:     isFork,
@@ -191,6 +203,31 @@ func (b *BitbucketCloudProvider) ForkRepository(
 		return nil, err
 	}
 
+	_, _, err = b.Client.RepositoriesApi.RepositoriesUsernameRepoSlugForksGet(
+		b.Context,
+		b.Username,
+		repo.Name,
+	)
+
+	// Fork isn't ready
+	if err != nil {
+
+		// Wait up to 1 minute for the fork to be ready
+		for i := 0; i < 30; i++ {
+			_, _, err = b.Client.RepositoriesApi.RepositoriesUsernameRepoSlugForksGet(
+				b.Context,
+				b.Username,
+				repo.Name,
+			)
+
+			if err == nil {
+				break
+			}
+
+			time.Sleep(2 * time.Second)
+		}
+	}
+
 	return BitbucketRepositoryToGitRepository(repo), nil
 }
 
@@ -226,7 +263,7 @@ func (b *BitbucketCloudProvider) ValidateRepositoryName(org string, name string)
 		name,
 	)
 
-	if r.StatusCode == 404 {
+	if r != nil && r.StatusCode == 404 {
 		return nil
 	}
 
@@ -275,6 +312,31 @@ func (b *BitbucketCloudProvider) CreatePullRequest(
 		return nil, err
 	}
 
+	_, _, err = b.Client.PullrequestsApi.RepositoriesUsernameRepoSlugPullrequestsPullRequestIdGet(
+		b.Context,
+		b.Username,
+		data.Repo,
+		pr.Id,
+	)
+
+	if err != nil {
+		// Wait up to 1 minute for the PR to be ready.
+		for i := 0; i < 30; i++ {
+			_, _, err = b.Client.PullrequestsApi.RepositoriesUsernameRepoSlugPullrequestsPullRequestIdGet(
+				b.Context,
+				b.Username,
+				data.Repo,
+				pr.Id,
+			)
+
+			if err == nil {
+				break
+			}
+
+			time.Sleep(2 * time.Second)
+		}
+	}
+
 	i := int(pr.Id)
 	prID := &i
 
@@ -295,7 +357,7 @@ func (b *BitbucketCloudProvider) UpdatePullRequestStatus(pr *GitPullRequest) err
 	bitbucketPR, _, err := b.Client.PullrequestsApi.RepositoriesUsernameRepoSlugPullrequestsPullRequestIdGet(
 		b.Context,
 		b.Username,
-		pr.Repo,
+		strings.TrimPrefix(pr.Repo, b.Username+"/"),
 		prID,
 	)
 
@@ -304,6 +366,9 @@ func (b *BitbucketCloudProvider) UpdatePullRequestStatus(pr *GitPullRequest) err
 	}
 
 	pr.State = &bitbucketPR.State
+	pr.Title = bitbucketPR.Title
+	pr.Body = bitbucketPR.Summary.Raw
+	pr.Author = bitbucketPR.Author.Username
 
 	if bitbucketPR.MergeCommit != nil {
 		pr.MergeCommitSHA = &bitbucketPR.MergeCommit.Hash
@@ -314,7 +379,7 @@ func (b *BitbucketCloudProvider) UpdatePullRequestStatus(pr *GitPullRequest) err
 		b.Context,
 		b.Username,
 		strconv.FormatInt(int64(prID), 10),
-		pr.Repo,
+		strings.TrimPrefix(pr.Repo, b.Username+"/"),
 	)
 
 	if err != nil {
@@ -329,6 +394,16 @@ func (b *BitbucketCloudProvider) UpdatePullRequestStatus(pr *GitPullRequest) err
 	return nil
 }
 
+func (p *BitbucketCloudProvider) GetPullRequest(owner, repo string, number int) (*GitPullRequest, error) {
+	pr := &GitPullRequest{
+		Owner:  owner,
+		Repo:   repo,
+		Number: &number,
+	}
+	err := p.UpdatePullRequestStatus(pr)
+	return pr, err
+}
+
 func (b *BitbucketCloudProvider) PullRequestLastCommitStatus(pr *GitPullRequest) (string, error) {
 
 	latestCommitStatus := bitbucket.Commitstatus{}
@@ -337,7 +412,7 @@ func (b *BitbucketCloudProvider) PullRequestLastCommitStatus(pr *GitPullRequest)
 		result, _, err := b.Client.CommitstatusesApi.RepositoriesUsernameRepoSlugCommitNodeStatusesGet(
 			b.Context,
 			b.Username,
-			pr.Repo,
+			strings.TrimPrefix(pr.Repo, b.Username+"/"),
 			pr.LastCommitSha,
 		)
 
@@ -414,7 +489,7 @@ func (b *BitbucketCloudProvider) MergePullRequest(pr *GitPullRequest, message st
 		b.Context,
 		b.Username,
 		strconv.FormatInt(int64(*pr.Number), 10),
-		pr.Repo,
+		strings.TrimPrefix(pr.Repo, b.Username+"/"),
 		options,
 	)
 
@@ -431,8 +506,13 @@ func (b *BitbucketCloudProvider) CreateWebHook(data *GitWebHookArguments) error 
 		"body": map[string]interface{}{
 			"url":    data.URL,
 			"active": true,
+			"events": []string{
+				"repo:push",
+			},
+			"description": "Jenkins X Web Hook",
 		},
 	}
+
 	_, _, err := b.Client.RepositoriesApi.RepositoriesUsernameRepoSlugHooksPost(
 		b.Context,
 		b.Username,
@@ -469,6 +549,7 @@ func BitbucketIssueToGitIssue(bIssue bitbucket.Issue) *GitIssue {
 		Body:     bIssue.Content.Markup,
 		State:    &bIssue.State,
 		IssueURL: &bIssue.Links.Html.Href,
+		ClosedAt: &bIssue.UpdatedOn,
 		Assignees: []GitUser{
 			assignee,
 		},
@@ -508,6 +589,14 @@ func (b *BitbucketCloudProvider) SearchIssues(org string, name string, query str
 	}
 
 	return gitIssues, nil
+}
+
+func (b *BitbucketCloudProvider) SearchIssuesClosedSince(org string, name string, t time.Time) ([]*GitIssue, error) {
+	issues, err := b.SearchIssues(org, name, "")
+	if err != nil {
+		return issues, err
+	}
+	return FilterIssuesClosedSince(issues, t), nil
 }
 
 func (b *BitbucketCloudProvider) GetIssue(org string, name string, number int) (*GitIssue, error) {
@@ -554,11 +643,13 @@ func (b *BitbucketCloudProvider) CreateIssue(owner string, repo string, issue *G
 }
 
 func (b *BitbucketCloudProvider) AddPRComment(pr *GitPullRequest, comment string) error {
-	return fmt.Errorf("Bitbucket Cloud doesn't support adding PR comments via the REST API")
+	fmt.Println("WARNING: Bitbucket Cloud doesn't support adding PR comments via the REST API")
+	return nil
 }
 
 func (b *BitbucketCloudProvider) CreateIssueComment(owner string, repo string, number int, comment string) error {
-	return fmt.Errorf("Bitbucket Cloud doesn't support adding issue comments viea the REST API")
+	fmt.Println("WARNING: Bitbucket Cloud doesn't support adding issue comments viea the REST API")
+	return nil
 }
 
 func (b *BitbucketCloudProvider) HasIssues() bool {
@@ -594,8 +685,34 @@ func (b *BitbucketCloudProvider) ServerURL() string {
 	return b.Server.URL
 }
 
+func (p *BitbucketCloudProvider) CurrentUsername() string {
+	return p.Username
+}
+
+func (p *BitbucketCloudProvider) UserInfo(username string) *v1.UserSpec {
+	user, _, err := p.Client.UsersApi.UsersUsernameGet(p.Context, username)
+	if err != nil {
+		log.Error("Unable to fetch user info for " + username + "\n")
+		return nil
+	}
+
+	return &v1.UserSpec{
+		Username: username,
+		Name:     user.DisplayName,
+		ImageURL: user.Links.Avatar.Href,
+		LinkURL:  user.Links.Self.Href,
+	}
+}
+
 func (b *BitbucketCloudProvider) UpdateRelease(owner string, repo string, tag string, releaseInfo *GitRelease) error {
-	return fmt.Errorf("Bitbucket Cloud doesn't support releases ")
+	fmt.Println("Bitbucket Cloud doesn't support releases")
+	return nil
+}
+
+func (p *BitbucketCloudProvider) ListReleases(org string, name string) ([]*GitRelease, error) {
+	answer := []*GitRelease{}
+	fmt.Println("Bitbucket Cloud doesn't support releases")
+	return answer, nil
 }
 
 func BitbucketAccessTokenURL(url string, username string) string {

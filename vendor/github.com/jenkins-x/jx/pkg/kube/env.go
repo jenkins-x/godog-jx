@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-
-	"os"
 
 	"github.com/jenkins-x/jx/pkg/apis/jenkins.io/v1"
 	"github.com/jenkins-x/jx/pkg/auth"
@@ -128,7 +128,7 @@ func CreateEnvironmentSurvey(out io.Writer, batchMode bool, authConfigSvc auth.A
 
 	if helmValues.ExposeController.Config.Domain == "" {
 
-		expose, err := getTeamExposecontrollerConfig(kubeClient, ns)
+		expose, err := GetTeamExposecontrollerConfig(kubeClient, ns)
 		if err != nil {
 			return nil, err
 		}
@@ -309,7 +309,7 @@ func CreateEnvironmentSurvey(out io.Writer, batchMode bool, authConfigSvc auth.A
 	return gitProvider, nil
 }
 
-func getTeamExposecontrollerConfig(kubeClient *kubernetes.Clientset, ns string) (map[string]string, error) {
+func GetTeamExposecontrollerConfig(kubeClient *kubernetes.Clientset, ns string) (map[string]string, error) {
 	cm, err := kubeClient.CoreV1().ConfigMaps(ns).Get("exposecontroller", metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to find team environment exposecontroller config %v", err)
@@ -589,7 +589,28 @@ func GetEnvironmentNames(jxClient *versioned.Clientset, ns string) ([]string, er
 	return envNames, nil
 }
 
-// GetEnvironments returns a map of the enviroments along with a sorted list of names
+// GetOrderedEnvironments returns a map of the environments along with the correctly ordered  names
+func GetOrderedEnvironments(jxClient *versioned.Clientset, ns string) (map[string]*v1.Environment, []string, error) {
+	m := map[string]*v1.Environment{}
+
+	envNames := []string{}
+	envs, err := jxClient.JenkinsV1().Environments(ns).List(metav1.ListOptions{})
+	if err != nil {
+		return m, envNames, err
+	}
+	SortEnvironments(envs.Items)
+	for _, env := range envs.Items {
+		n := env.Name
+		copy := env
+		m[n] = &copy
+		if n != "" {
+			envNames = append(envNames, n)
+		}
+	}
+	return m, envNames, nil
+}
+
+// GetEnvironments returns a map of the environments along with a sorted list of names
 func GetEnvironments(jxClient *versioned.Clientset, ns string) (map[string]*v1.Environment, []string, error) {
 	m := map[string]*v1.Environment{}
 
@@ -608,6 +629,36 @@ func GetEnvironments(jxClient *versioned.Clientset, ns string) (map[string]*v1.E
 	}
 	sort.Strings(envNames)
 	return m, envNames, nil
+}
+
+// GetEnvironments returns the namespace name for a given environment
+func GetEnvironmentNamespace(jxClient *versioned.Clientset, ns, environment string) (string, error) {
+	env, err := jxClient.JenkinsV1().Environments(ns).Get(environment, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	if env == nil {
+		return "", fmt.Errorf("no environment found called %s, try running `jx get env`", environment)
+	}
+	return env.Spec.Namespace, nil
+}
+
+// GetEditEnvironmentNamespace returns the namespace of the current users edit environment
+func GetEditEnvironmentNamespace(jxClient *versioned.Clientset, ns string) (string, error) {
+	envs, err := jxClient.JenkinsV1().Environments(ns).List(metav1.ListOptions{})
+	if err != nil {
+		return "", err
+	}
+	u, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+	for _, env := range envs.Items {
+		if env.Spec.Kind == v1.EnvironmentKindTypeEdit && env.Spec.PreviewGitSpec.User.Username == u.Username {
+			return env.Spec.Namespace, nil
+		}
+	}
+	return "", fmt.Errorf("The user %s does not have an Edit environment in home namespace %s", u.Username, ns)
 }
 
 // GetDevNamespace returns the developer environment namespace

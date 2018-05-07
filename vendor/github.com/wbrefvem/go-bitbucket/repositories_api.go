@@ -1067,7 +1067,7 @@ func (a *RepositoriesApiService) RepositoriesUsernameRepoSlugHooksPost(ctx conte
 	}
 
 	// body params
-	if localVarTempParam, localVarOk := localVarOptionals["body"].(Repository); localVarOk {
+	if localVarTempParam, localVarOk := localVarOptionals["body"].(map[string]interface{}); localVarOk {
 		localVarPostBody = &localVarTempParam
 	}
 

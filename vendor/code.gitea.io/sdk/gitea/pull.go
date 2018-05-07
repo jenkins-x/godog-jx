@@ -42,6 +42,9 @@ type PullRequest struct {
 	MergeBase string        `json:"merge_base"`
 
 	// swagger:strfmt date-time
+	Deadline *time.Time `json:"due_date"`
+
+	// swagger:strfmt date-time
 	Created *time.Time `json:"created_at"`
 	// swagger:strfmt date-time
 	Updated *time.Time `json:"updated_at"`
@@ -90,6 +93,8 @@ type CreatePullRequestOption struct {
 	Assignees []string `json:"assignees"`
 	Milestone int64    `json:"milestone"`
 	Labels    []int64  `json:"labels"`
+	// swagger:strfmt date-time
+	Deadline *time.Time `json:"due_date"`
 }
 
 // CreatePullRequest create pull request with options
@@ -112,6 +117,8 @@ type EditPullRequestOption struct {
 	Milestone int64    `json:"milestone"`
 	Labels    []int64  `json:"labels"`
 	State     *string  `json:"state"`
+	// swagger:strfmt date-time
+	Deadline *time.Time `json:"due_date"`
 }
 
 // EditPullRequest modify pull request with PR id and options

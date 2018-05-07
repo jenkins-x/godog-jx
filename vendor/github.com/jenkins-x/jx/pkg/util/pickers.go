@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"gopkg.in/AlecAivazis/survey.v1"
 )
@@ -100,6 +101,20 @@ func PickNames(names []string, message string) ([]string, error) {
 	return picked, nil
 }
 
+// SelectNamesWithFilter selects from a list of names with a given filter. Optionally selecting them all
+func SelectNamesWithFilter(names []string, message string, selectAll bool, filter string) ([]string, error) {
+	filtered := []string{}
+	for _, name := range names {
+		if filter == "" || strings.Index(name, filter) >= 0 {
+			filtered = append(filtered, name)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("No names match filter: %s", filter)
+	}
+	return SelectNames(filtered, message, selectAll)
+}
+
 // SelectNames select which names from the list should be chosen
 func SelectNames(names []string, message string, selectAll bool) ([]string, error) {
 	answer := []string{}
@@ -128,5 +143,6 @@ func Confirm(message string, defaultValue bool, help string) bool {
 		Help:    help,
 	}
 	survey.AskOne(prompt, &answer, nil)
+	fmt.Printf("\n")
 	return answer
 }

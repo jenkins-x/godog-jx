@@ -6,6 +6,7 @@ import (
 	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 
 	"github.com/jenkins-x/jx/pkg/jx/cmd/templates"
+	"github.com/jenkins-x/jx/pkg/version"
 	"github.com/spf13/cobra"
 	"strings"
 )
@@ -53,6 +54,8 @@ func NewJXCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cobra.Co
 	}
 	addProjectCommands = append(addProjectCommands, findCommands("create archetype", createCommands, deleteCommands)...)
 	addProjectCommands = append(addProjectCommands, findCommands("create spring", createCommands, deleteCommands)...)
+	addProjectCommands = append(addProjectCommands, findCommands("create lile", createCommands, deleteCommands)...)
+	addProjectCommands = append(addProjectCommands, findCommands("create micro", createCommands, deleteCommands)...)
 	addProjectCommands = append(addProjectCommands, findCommands("create quickstart", createCommands, deleteCommands)...)
 
 	gitCommands := []*cobra.Command{}
@@ -105,6 +108,7 @@ func NewJXCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cobra.Co
 				NewCmdLogs(f, out, err),
 				NewCmdOpen(f, out, err),
 				NewCmdRsh(f, out, err),
+				NewCmdSync(f, out, err),
 			},
 		},
 		{
@@ -132,6 +136,8 @@ func NewJXCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cobra.Co
 	groups.Add(cmds)
 
 	cmds.AddCommand(NewCmdVersion(f, out, err))
+	cmds.Version = version.GetVersion()
+	cmds.SetVersionTemplate("{{printf .Version}}\n")
 
 	filters := []string{"options"}
 

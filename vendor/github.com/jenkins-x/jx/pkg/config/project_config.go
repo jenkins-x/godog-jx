@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"reflect"
 
 	"github.com/jenkins-x/jx/pkg/util"
 	"gopkg.in/yaml.v2"
@@ -19,6 +20,7 @@ type ProjectConfig struct {
 	IssueTracker        *IssueTrackerConfig       `yaml:"issueTracker,omitempty"`
 	Chat                *ChatConfig               `yaml:"chat,omitempty"`
 	Wiki                *WikiConfig               `yaml:"wiki,omitempty"`
+	Addons              []*AddonConfig            `yaml:"addons,omitempty"`
 }
 
 type PreviewEnvironmentConfig struct {
@@ -39,9 +41,15 @@ type WikiConfig struct {
 }
 
 type ChatConfig struct {
-	Kind string `yaml:"kind,omitempty"`
-	URL  string `yaml:"url,omitempty"`
-	Room string `yaml:"room,omitempty"`
+	Kind             string `yaml:"kind,omitempty"`
+	URL              string `yaml:"url,omitempty"`
+	DeveloperChannel string `yaml:"developerChannel,omitempty"`
+	UserChannel      string `yaml:"userChannel,omitempty"`
+}
+
+type AddonConfig struct {
+	Name    string `yaml:"name,omitempty"`
+	Version string `yaml:"version,omitempty"`
 }
 
 // LoadProjectConfig loads the project configuration if there is a project configuration file
@@ -68,8 +76,8 @@ func LoadProjectConfig(projectDir string) (*ProjectConfig, string, error) {
 
 // IsEmpty returns true if this configuration is empty
 func (c *ProjectConfig) IsEmpty() bool {
-	empty := ProjectConfig{}
-	return *c == empty
+	empty := &ProjectConfig{}
+	return reflect.DeepEqual(empty, c)
 }
 
 // SaveConfig saves the configuration file to the given project directory

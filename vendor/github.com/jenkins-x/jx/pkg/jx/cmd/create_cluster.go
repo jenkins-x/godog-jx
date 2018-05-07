@@ -1,22 +1,19 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/jenkins-x/jx/pkg/jx/cmd/templates"
 	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 	"github.com/spf13/cobra"
-	"gopkg.in/AlecAivazis/survey.v1"
 )
 
 type KubernetesProvider string
 
-// CreateClusterOptions the flags for running crest cluster
+// CreateClusterOptions the flags for running create cluster
 type CreateClusterOptions struct {
 	CreateOptions
 	InstallOptions InstallOptions
@@ -52,6 +49,8 @@ const (
     * gke (Google Container Engine - https://cloud.google.com/kubernetes-engine)
     * kubernetes for custom installations of Kubernetes
     * minikube (single-node Kubernetes cluster inside a VM on your laptop)
+	* minishift (single-node OpenShift cluster inside a VM on your laptop)
+	* openshift for installing on 3.9.x or later clusters of OpenShift
     * coming soon:
         eks (Amazon Elastic Container Service - https://aws.amazon.com/eks)    `
 )
@@ -73,6 +72,7 @@ var (
 		- helm (package manager for kubernetes)
 		- draft (CLI that makes it easy to build applications that run on kubernetes)
 		- minikube (single-node Kubernetes cluster inside a VM on your laptop )
+		- minishift (single-node OpenShift cluster inside a VM on your laptop)
 		- virtualisation drivers (to run minikube in a VM)
 		- gcloud (Google Cloud CLI)
 		- az (Azure CLI)
@@ -118,6 +118,7 @@ func NewCmdCreateCluster(f cmdutil.Factory, out io.Writer, errOut io.Writer) *co
 	cmd.AddCommand(NewCmdCreateClusterAWS(f, out, errOut))
 	cmd.AddCommand(NewCmdCreateClusterGKE(f, out, errOut))
 	cmd.AddCommand(NewCmdCreateClusterMinikube(f, out, errOut))
+	cmd.AddCommand(NewCmdCreateClusterMinishift(f, out, errOut))
 
 	return cmd
 }
@@ -146,17 +147,10 @@ func (o *CreateClusterOptions) initAndInstall(provider string) error {
 	// call jx install
 	installOpts := &o.InstallOptions
 
-	// lets default the helm domain
-	exposeController := o.InstallOptions.CreateEnvOptions.HelmValuesConfig.ExposeController
-	if exposeController != nil && exposeController.Config.Domain == "" && installOpts.Flags.Domain != "" {
-		exposeController.Config.Domain = installOpts.Flags.Domain
-	}
-
 	err := installOpts.Run()
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -165,52 +159,5 @@ func (o *CreateClusterOptions) Run() error {
 }
 
 func (o *CreateClusterOptions) addCreateClusterFlags(cmd *cobra.Command) {
-
 	o.InstallOptions.addInstallFlags(cmd, true)
-}
-
-func (o *CreateClusterOptions) getClusterDependencies(deps []string) []string {
-	d := binaryShouldBeInstalled("kubectl")
-	if d != "" {
-		deps = append(deps, d)
-	}
-
-	d = binaryShouldBeInstalled("helm")
-	if d != "" {
-		deps = append(deps, d)
-	}
-
-	// Platform specific deps
-	if runtime.GOOS == "darwin" {
-		if !o.NoBrew {
-			d = binaryShouldBeInstalled("brew")
-			if d != "" {
-				deps = append(deps, d)
-			}
-		}
-	}
-	return deps
-}
-
-func (o *CreateClusterOptions) installMissingDependencies(providerSpecificDeps []string) error {
-
-	// get base list of required dependencies and add provider specific ones
-	deps := o.getClusterDependencies(providerSpecificDeps)
-
-	if len(deps) == 0 {
-		return nil
-	}
-
-	if o.BatchMode {
-		return errors.New(fmt.Sprintf("run without batch mode or mannually install missing dependencies %v\n", deps))
-	}
-	install := []string{}
-	prompt := &survey.MultiSelect{
-		Message: "Missing required dependencies, deselect to avoid auto installing:",
-		Options: deps,
-		Default: deps,
-	}
-	survey.AskOne(prompt, &install, nil)
-
-	return o.doInstallMissingDependencies(install)
 }

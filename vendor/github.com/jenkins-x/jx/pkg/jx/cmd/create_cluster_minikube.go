@@ -18,7 +18,7 @@ import (
 	"gopkg.in/AlecAivazis/survey.v1"
 )
 
-// CreateClusterOptions the flags for running crest cluster
+// CreateClusterOptions the flags for running create cluster
 type CreateClusterMinikubeOptions struct {
 	CreateClusterOptions
 
@@ -32,6 +32,7 @@ type CreateClusterMinikubeFlags struct {
 	Driver              string
 	HyperVVirtualSwitch string
 	Namespace           string
+	ClusterVersion      string
 }
 
 var (
@@ -75,8 +76,9 @@ func NewCmdCreateClusterMinikube(f cmdutil.Factory, out io.Writer, errOut io.Wri
 
 	cmd.Flags().StringVarP(&options.Flags.Memory, "memory", "m", "4096", "Amount of RAM allocated to the minikube VM in MB")
 	cmd.Flags().StringVarP(&options.Flags.CPU, "cpu", "c", "3", "Number of CPUs allocated to the minikube VM")
-	cmd.Flags().StringVarP(&options.Flags.Driver, "vm-driver", "d", "", "VM driver is one of: [virtualbox xhyve vmwarefusion hyperkit]")
+	cmd.Flags().StringVarP(&options.Flags.Driver, "vm-driver", "d", "", "VM driver is one of: [hyperkit hyperv kvm kvm2 virtualbox vmwarefusion xhyve]")
 	cmd.Flags().StringVarP(&options.Flags.HyperVVirtualSwitch, "hyperv-virtual-switch", "v", "", "Additional options for using HyperV with minikube")
+	cmd.Flags().StringVarP(&options.Flags.ClusterVersion, optionKubernetesVersion, "", "", "kubernetes version")
 
 	return cmd
 }
@@ -173,6 +175,9 @@ func (o *CreateClusterMinikubeOptions) createClusterMinikube() error {
 	// only add drivers that are appropriate for this OS
 	var driver string
 	drivers := []string{vmDriverValue}
+	if vmDriverValue == "kvm" {
+		drivers = append(drivers, "kvm2")
+	}
 	if vmDriverValue != "virtualbox" {
 		drivers = append(drivers, "virtualbox")
 	}
@@ -197,16 +202,22 @@ func (o *CreateClusterMinikubeOptions) createClusterMinikube() error {
 		return err
 	}
 
-	err = o.doInstallMissingDependencies([]string{driver})
-	if err != nil {
-		log.Errorf("error installing missing dependencies %v, please fix or install manually then try again", err)
-		os.Exit(-1)
+	if driver != "none" {
+		err = o.doInstallMissingDependencies([]string{driver})
+		if err != nil {
+			log.Errorf("error installing missing dependencies %v, please fix or install manually then try again", err)
+			os.Exit(-1)
+		}
 	}
 
-	args := []string{"start", "--memory", mem, "--cpus", cpu, "--vm-driver", driver, "--extra-config", "apiserver.Authorization.Mode=RBAC"}
+	args := []string{"start", "--memory", mem, "--cpus", cpu, "--vm-driver", driver, "--bootstrapper=kubeadm"}
 	hyperVVirtualSwitch := o.Flags.HyperVVirtualSwitch
 	if hyperVVirtualSwitch != "" {
 		args = append(args, "--hyperv-virtual-switch", hyperVVirtualSwitch)
+	}
+	kubernetesVersion := o.Flags.ClusterVersion
+	if kubernetesVersion != "" {
+		args = append(args, "--kubernetes-version", kubernetesVersion)
 	}
 	err = o.runCommand("minikube", args...)
 	if err != nil {

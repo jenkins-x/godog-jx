@@ -109,7 +109,7 @@ func (o *CreateJenkinsUserOptions) Run() error {
 		}
 		server = config.GetOrCreateServer(url)
 	} else {
-		server, err = o.findServer(config, &o.ServerFlags, "jenkins server", "Try installing one via: jx create team")
+		server, err = o.findServer(config, &o.ServerFlags, "jenkins server", "Try installing one via: jx create team", false)
 		if err != nil {
 			return err
 		}
@@ -136,7 +136,7 @@ func (o *CreateJenkinsUserOptions) Run() error {
 	if userAuth.IsInvalid() && o.Password != "" && o.UseBrowser {
 		err := o.tryFindAPITokenFromBrowser(tokenUrl, userAuth)
 		if err != nil {
-			log.Warnf("unable to automaticaly find API token with chromedp using URL %s\n", tokenUrl)
+			log.Warnf("unable to automatically find API token with chromedp using URL %s\n", tokenUrl)
 		}
 	}
 

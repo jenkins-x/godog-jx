@@ -52,11 +52,15 @@ func NewCmdDelete(f cmdutil.Factory, out io.Writer, errOut io.Writer) *cobra.Com
 	}
 
 	cmd.AddCommand(NewCmdDeleteAddon(f, out, errOut))
+	cmd.AddCommand(NewCmdDeleteApp(f, out, errOut))
+	cmd.AddCommand(NewCmdDeleteChat(f, out, errOut))
 	cmd.AddCommand(NewCmdDeleteContext(f, out, errOut))
+	cmd.AddCommand(NewCmdDeleteDevPod(f, out, errOut))
 	cmd.AddCommand(NewCmdDeleteEnv(f, out, errOut))
 	cmd.AddCommand(NewCmdDeleteGit(f, out, errOut))
 	cmd.AddCommand(NewCmdDeleteJenkins(f, out, errOut))
 	cmd.AddCommand(NewCmdDeleteRepo(f, out, errOut))
+	cmd.AddCommand(NewCmdDeleteToken(f, out, errOut))
 	cmd.AddCommand(NewCmdDeleteTracker(f, out, errOut))
 	return cmd
 }
