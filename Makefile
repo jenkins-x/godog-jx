@@ -83,7 +83,7 @@ bdd-init:
 	git config --global --add user.name JenkinsXBot
 	git config --global --add user.email jenkins-x@googlegroups.com
 	
-bdd-tests: bdd-init jx-spring
+bdd-tests: jx-spring
 
 fmt:
 	@FORMATTED=`$(GO) fmt $(PACKAGE_DIRS)`
