@@ -79,7 +79,11 @@ configure-ghe:
 	jx delete git server GitHub
 	jx create git token -n GHE $(GHE_USER) -t $(GHE_TOKEN)
 
-bdd-tests: jx-spring
+bdd-init: 
+	git config --global --add user.name JenkinsXBot
+	git config --global --add user.email jenkins-x@googlegroups.com
+	
+bdd-tests: bdd-init jx-spring
 
 fmt:
 	@FORMATTED=`$(GO) fmt $(PACKAGE_DIRS)`
