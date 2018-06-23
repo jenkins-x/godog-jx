@@ -78,7 +78,7 @@ configure-ghe:
 	jx create git server github $(GIT_PROVIDER_URL) -n GHE
 	jx --version
 	jx get git server
-	jx delete git server github.com 
+	#jx delete git server github.com 
 	jx create git token -n GHE $(GHE_USER) -t $(GHE_TOKEN)
 
 bdd-init: 
