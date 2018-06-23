@@ -76,6 +76,8 @@ configure-gitea:
 configure-ghe:
 	echo "Setting up GitHub Enterprise support for user $(GHE_USER) email: $(GITEA_EMAIL)"
 	jx create git server github $(GIT_PROVIDER_URL) -n GHE
+	jx --version
+	jx get git server
 	jx delete git server GitHub
 	jx create git token -n GHE $(GHE_USER) -t $(GHE_TOKEN)
 
