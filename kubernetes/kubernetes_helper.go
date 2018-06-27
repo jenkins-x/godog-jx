@@ -1,13 +1,11 @@
 package kubernetes
 
 import (
-	"os"
-	"strings"
-
 	"flag"
-	"path/filepath"
-
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/jenkins-x/godog-jx/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

@@ -68,6 +68,30 @@ jx-import: *.go
 jx-import-url: *.go
 	$(GO) test -test.v -godog.feature=importurl.feature
 
+# FAILS
+jx-quickstart-android-quickstart: *.go
+	$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-android-quickstart.feature
+
+jx-quickstart-angular-io-quickstart: *.go
+	$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-angular-io-quickstart.feature
+
+jx-quickstart-aspnet-app: *.go
+	$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-aspnet-app.feature
+
+jx-quickstart-golang-http: *.go
+	$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-golang-http.feature
+
+jx-quickstart-node-http: *.go
+	$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-node-http.feature
+
+jx-quickstart-rust-http: *.go
+	$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-rust-http.feature
+
+jx-quickstart-python-http: *.go
+	$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-python-http.feature
+
+jx-quickstart: *.go
+	parallel --line-buffer ::: "$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-angular-io-quickstart.feature" "$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-aspnet-app.feature" "$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-golang-http.feature" "$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-node-http.feature" "$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-rust-http.feature" "$(GO) test -test.v -test.timeout=0 -godog.feature=quickstart-python-http.feature" | tr -s ab
 
 configure-gitea:
 	echo "Installing gitea addon with user $(GITEA_USER) email: $(GITEA_EMAIL)"

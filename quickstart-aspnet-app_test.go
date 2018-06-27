@@ -16,13 +16,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type springTest struct {
+type aspnetAppTest struct {
 	common.Test
 
 	Args []string
 }
 
-func (o *springTest) aWorkDirectory() error {
+func (o *aspnetAppTest) aWorkDirectory() error {
 	var err error
 	tmpDir, err = ioutil.TempDir("", tempDirPrefix)
 	if err != nil {
@@ -37,7 +37,7 @@ func (o *springTest) aWorkDirectory() error {
 	return o.Errors.Error()
 }
 
-func (o *springTest) runningInThatDirectory(commandLine string) error {
+func (o *aspnetAppTest) runningInThatDirectory(commandLine string) error {
 	args := strings.Fields(commandLine)
 	assert.NotEmpty(o.Errors, args, "not enough arguments")
 	cmd := args[0]
@@ -47,14 +47,14 @@ func (o *springTest) runningInThatDirectory(commandLine string) error {
 		return err
 	}
 	fmt.Printf("Using git provider URL %s and work directory %s\n", util.ColorInfo(gitProviderURL), util.ColorInfo(o.WorkDir))
-	remaining := append(args[1:], "-b", "--git-provider-url", gitProviderURL, "--org", o.GetGitOrganisation())
+	remaining := append(args[1:], "--org", o.GetGitOrganisation())
 	if len(o.Args) > 0 {
 		remaining = append(remaining, o.Args...)
 	}
 
-	name := tempDirPrefix + "spring-" + seed
+	name := tempDirPrefix + "aspnet-app-" + seed
 	o.AppName = name
-	remaining = append(remaining, "--artifact", name, "--name", name)
+	remaining = append(remaining, "-p", name)
 
 	err = utils.RunCommandInteractive(o.Interactive, o.WorkDir, cmd, remaining...)
 	if err != nil {
@@ -63,18 +63,18 @@ func (o *springTest) runningInThatDirectory(commandLine string) error {
 	return o.Errors.Error()
 }
 
-func (o *springTest) thereShouldBeAJenkinsProjectCreate() error {
+func (o *aspnetAppTest) thereShouldBeAJenkinsProjectCreate() error {
 	fmt.Printf("TODO should be a jenkins project\n")
 	return nil
 }
 
-func (o *springTest) aRunningApplication() error {
+func (o *aspnetAppTest) aRunningApplication() error {
 	fmt.Printf("TODO should be able to query this using 'jx get app (app name)'\n")
 	return nil
 }
 
-func (o *springTest) executingJxDeleteApp() error {
-	appName := tempDirPrefix + "spring-" + seed
+func (o *aspnetAppTest) executingJxDeleteApp() error {
+	appName := tempDirPrefix + "aspnet-app-" + seed
 	cmd := "jx"
 	fullAppName := o.GetGitOrganisation() + "/" + appName
 	args := []string{"delete", "app", "-b", fullAppName}
@@ -85,8 +85,8 @@ func (o *springTest) executingJxDeleteApp() error {
 	return o.Errors.Error()
 }
 
-func (o *springTest) executingJxDeleteRepo() error {
-	appName := tempDirPrefix + "spring-" + seed
+func (o *aspnetAppTest) executingJxDeleteRepo() error {
+	appName := tempDirPrefix + "aspnet-app-" + seed
 	cmd := "jx"
 	args := []string{"delete", "repo", "-b", "--github", "-o", o.GetGitOrganisation(), "-n", appName}
 	err := utils.RunCommandInteractive(o.Interactive, o.WorkDir, cmd, args...)
@@ -96,8 +96,8 @@ func (o *springTest) executingJxDeleteRepo() error {
 	return o.Errors.Error()
 }
 
-func SpringFeatureContext(s *godog.Suite) {
-	o := &springTest{
+func AspnetAppFeatureContext(s *godog.Suite) {
+	o := &aspnetAppTest{
 		Test: common.Test{
 			Factory:     cmdutil.NewFactory(),
 			Interactive: os.Getenv("JX_INTERACTIVE") == "true",

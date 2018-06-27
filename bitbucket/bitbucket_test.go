@@ -1,11 +1,10 @@
 package bitbucket
 
 import (
-	"github.com/jenkins-x/jx/pkg/auth"
-	"github.com/jenkins-x/jx/pkg/gits"
-
 	"github.com/DATA-DOG/godog"
 	"github.com/jenkins-x/godog-jx/utils"
+	"github.com/jenkins-x/jx/pkg/auth"
+	"github.com/jenkins-x/jx/pkg/gits"
 )
 
 type BitbucketContext struct {

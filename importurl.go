@@ -17,7 +17,7 @@ import (
 )
 
 type importurlTest struct {
-	common.CommonTest
+	common.Test
 
 	Args []string
 }
@@ -111,7 +111,7 @@ func (o *importurlTest) thereShouldBeAJenkinsProjectCreate() error {
 
 func ImporturlFeatureContext(s *godog.Suite) {
 	o := &importurlTest{
-		CommonTest: common.CommonTest{
+		Test: common.Test{
 			Factory:     cmdutil.NewFactory(),
 			Interactive: os.Getenv("JX_INTERACTIVE") == "true",
 			Errors:      utils.CreateErrorSlice(),
