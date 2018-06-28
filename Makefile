@@ -50,17 +50,14 @@ check: fmt test
 #build: *.go */*.go
 #	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(BUILDFLAGS) -o build/$(NAME) $(NAME).go
 
-test:
-	cd jx && godog
-	cd github && godog
-	cd jenkins && godog
+test: jx-spring
 
 
 bdd-all: *.go
 	$(GO) test $(PACKAGE_DIRS) -test.run TestMain  -test.v -godog.feature=.
 
 jx-spring: *.go
-	$(GO) test -test.v -godog.feature=spring.feature
+	$(GO) test -test.v -test.run TestMain -godog.feature=spring.feature
 
 jx-import: *.go
 	$(GO) test -test.v -godog.feature=import.feature
