@@ -8,20 +8,27 @@ This project contains the BDD tests for using Jenkins X with the [jx command lin
 - a Jenkins X installation
 
 
-## JX BDD tests
+## Running the BDD tests
 
-To run the `jx import url` tests:
-
-    ./bdd-importurl.sh
-    
-The bdd tests will use your local jx setup in `~/.jx` and defaults to the current git provider in `~/.jx/gitAuth.yaml`
-
-To specify a specific git provider use:
+To specify a specific git provider and the git user/organisation to use for the tests:
 
     export GIT_PROVIDER_URL="github.com"
+    export GIT_ORGANISATION="jstrachan"
 
-Passing in the Git provider URL of your choice
+The bdd tests will use your local jx setup in `~/.jx` and defaults to the current git provider in `~/.jx/gitAuth.yaml`
 
+If you wish to use a different location for `~/.jx` due to running on a CI system then use:
+
+    export JX_HOME=/foo/bar
+
+To setup the git auth token first before running the tests you may wanna use a command like this:
+
+	  jx create git token -n MyGitServerName MyGitUser -t MyToken
+    
+Then to run the `jx spring` tests:
+
+    make jx-spring
+    
 ### Interactive mode
 
 If you have not setup API tokens for your Jenkins or git provider use interactive mode to run a test:
