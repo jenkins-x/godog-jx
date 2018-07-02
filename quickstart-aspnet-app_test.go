@@ -74,6 +74,9 @@ func (o *aspnetAppTest) aRunningApplication() error {
 }
 
 func (o *aspnetAppTest) executingJxDeleteApp() error {
+	if !utils.DeleteApps() {
+		return nil
+	}
 	appName := tempDirPrefix + "aspnet-app-" + seed
 	cmd := "jx"
 	fullAppName := o.GetGitOrganisation() + "/" + appName
@@ -86,6 +89,9 @@ func (o *aspnetAppTest) executingJxDeleteApp() error {
 }
 
 func (o *aspnetAppTest) executingJxDeleteRepo() error {
+	if !utils.DeleteRepos() {
+		return nil
+	}
 	appName := tempDirPrefix + "aspnet-app-" + seed
 	cmd := "jx"
 	args := []string{"delete", "repo", "-b", "--github", "-o", o.GetGitOrganisation(), "-n", appName}

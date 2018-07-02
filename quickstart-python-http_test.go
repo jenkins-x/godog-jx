@@ -74,6 +74,9 @@ func (o *pythonHTTPTest) aRunningApplication() error {
 }
 
 func (o *pythonHTTPTest) executingJxDeleteApp() error {
+	if !utils.DeleteApps() {
+		return nil
+	}
 	appName := tempDirPrefix + "python-http-" + seed
 	cmd := "jx"
 	fullAppName := o.GetGitOrganisation() + "/" + appName
@@ -86,6 +89,9 @@ func (o *pythonHTTPTest) executingJxDeleteApp() error {
 }
 
 func (o *pythonHTTPTest) executingJxDeleteRepo() error {
+	if !utils.DeleteRepos() {
+		return nil
+	}
 	appName := tempDirPrefix + "python-http-" + seed
 	cmd := "jx"
 	args := []string{"delete", "repo", "-b", "--github", "-o", o.GetGitOrganisation(), "-n", appName}

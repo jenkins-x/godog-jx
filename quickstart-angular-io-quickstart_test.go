@@ -74,6 +74,9 @@ func (o *angularIoQuickstartTest) aRunningApplication() error {
 }
 
 func (o *angularIoQuickstartTest) executingJxDeleteApp() error {
+	if !utils.DeleteApps() {
+		return nil
+	}
 	appName := tempDirPrefix + "angular-io-quickstart-" + seed
 	cmd := "jx"
 	fullAppName := o.GetGitOrganisation() + "/" + appName
@@ -86,6 +89,9 @@ func (o *angularIoQuickstartTest) executingJxDeleteApp() error {
 }
 
 func (o *angularIoQuickstartTest) executingJxDeleteRepo() error {
+	if !utils.DeleteRepos() {
+		return nil
+	}
 	appName := tempDirPrefix + "angular-io-quickstart-" + seed
 	cmd := "jx"
 	args := []string{"delete", "repo", "-b", "--github", "-o", o.GetGitOrganisation(), "-n", appName}

@@ -74,6 +74,9 @@ func (o *springTest) aRunningApplication() error {
 }
 
 func (o *springTest) executingJxDeleteApp() error {
+	if !utils.DeleteApps() {
+		return nil
+	}
 	appName := tempDirPrefix + "spring-" + seed
 	cmd := "jx"
 	fullAppName := o.GetGitOrganisation() + "/" + appName
@@ -86,6 +89,9 @@ func (o *springTest) executingJxDeleteApp() error {
 }
 
 func (o *springTest) executingJxDeleteRepo() error {
+	if !utils.DeleteRepos() {
+		return nil
+	}
 	appName := tempDirPrefix + "spring-" + seed
 	cmd := "jx"
 	args := []string{"delete", "repo", "-b", "--github", "-o", o.GetGitOrganisation(), "-n", appName}
