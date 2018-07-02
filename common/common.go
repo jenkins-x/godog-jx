@@ -12,7 +12,8 @@ import (
 	cmdutil "github.com/jenkins-x/jx/pkg/jx/cmd/util"
 )
 
-type CommonTest struct {
+// Test is a struct containing generalised test information
+type Test struct {
 	Factory       cmdutil.Factory
 	JenkinsClient *gojenkins.Jenkins
 	Interactive   bool
@@ -24,7 +25,7 @@ type CommonTest struct {
 
 // TheApplicationShouldBeBuiltAndPromotedViaCICD asserts that the project
 // should be created in Jenkins and that the build should complete successfully
-func (o *CommonTest) TheApplicationShouldBeBuiltAndPromotedViaCICD() error {
+func (o *Test) TheApplicationShouldBeBuiltAndPromotedViaCICD() error {
 	appName := o.AppName
 	if appName == "" {
 		_, appName = filepath.Split(o.WorkDir)
@@ -71,7 +72,7 @@ func (o *CommonTest) TheApplicationShouldBeBuiltAndPromotedViaCICD() error {
 
 // TheGitInfoShouldHaveAJobAndShouldBeBuiltAndPromotedViaCICD asserts that the project
 // should be created in Jenkins and that the build should complete successfully
-func (o *CommonTest) TheGitInfoShouldHaveAJobAndShouldBeBuiltAndPromotedViaCICD() error {
+func (o *Test) TheGitInfoShouldHaveAJobAndShouldBeBuiltAndPromotedViaCICD() error {
 	url, err := gits.DiscoverRemoteGitURL(filepath.Join(o.WorkDir, ".git/config"))
 	if err != nil {
 		return err
@@ -106,7 +107,7 @@ func (o *CommonTest) TheGitInfoShouldHaveAJobAndShouldBeBuiltAndPromotedViaCICD(
 
 // GitProviderURLOrEmpty returns the git provider to use based on the environment variable
 // `GIT_PROVIDER_URL` or returns the empty string
-func (o *CommonTest) GitProviderURLOrEmpty() (string, error) {
+func (o *Test) GitProviderURLOrEmpty() (string, error) {
 	gitProviderURL := os.Getenv("GIT_PROVIDER_URL")
 	if gitProviderURL != "" {
 		return gitProviderURL, nil
@@ -116,7 +117,7 @@ func (o *CommonTest) GitProviderURLOrEmpty() (string, error) {
 
 // GitProviderURL returns the git provider URL to use based on the environment variable
 // `GIT_PROVIDER_URL` or returns the default server's URL
-func (o *CommonTest) GitProviderURL() (string, error) {
+func (o *Test) GitProviderURL() (string, error) {
 	gitProviderURL := os.Getenv("GIT_PROVIDER_URL")
 	if gitProviderURL != "" {
 		return gitProviderURL, nil
@@ -133,13 +134,13 @@ func (o *CommonTest) GitProviderURL() (string, error) {
 	}
 	servers := config.Servers
 	if len(servers) == 0 {
-		return "", fmt.Errorf("No servers in the ~/.jx/gitAuth.yaml file!")
+		return "", fmt.Errorf("No servers in the ~/.jx/gitAuth.yaml file")
 	}
 	return servers[0].URL, nil
 }
 
 // GetGitOrganisation returns the git organisation to create new projects inside
-func (o* CommonTest) GetGitOrganisation() string {
+func (o *Test) GetGitOrganisation() string {
 	org := o.Organisation
 	if org == "" {
 		org = os.Getenv("GIT_ORGANISATION")

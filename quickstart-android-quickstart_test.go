@@ -16,13 +16,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type springTest struct {
+type androidQuickstartTest struct {
 	common.Test
 
 	Args []string
 }
 
-func (o *springTest) aWorkDirectory() error {
+func (o *androidQuickstartTest) aWorkDirectory() error {
 	var err error
 	tmpDir, err = ioutil.TempDir("", tempDirPrefix)
 	if err != nil {
@@ -37,7 +37,7 @@ func (o *springTest) aWorkDirectory() error {
 	return o.Errors.Error()
 }
 
-func (o *springTest) runningInThatDirectory(commandLine string) error {
+func (o *androidQuickstartTest) runningInThatDirectory(commandLine string) error {
 	args := strings.Fields(commandLine)
 	assert.NotEmpty(o.Errors, args, "not enough arguments")
 	cmd := args[0]
@@ -47,14 +47,14 @@ func (o *springTest) runningInThatDirectory(commandLine string) error {
 		return err
 	}
 	fmt.Printf("Using git provider URL %s and work directory %s\n", util.ColorInfo(gitProviderURL), util.ColorInfo(o.WorkDir))
-	remaining := append(args[1:], "-b", "--git-provider-url", gitProviderURL, "--org", o.GetGitOrganisation())
+	remaining := append(args[1:], "--org", o.GetGitOrganisation())
 	if len(o.Args) > 0 {
 		remaining = append(remaining, o.Args...)
 	}
 
-	name := tempDirPrefix + "spring-" + seed
+	name := tempDirPrefix + "android-quickstart-" + seed
 	o.AppName = name
-	remaining = append(remaining, "--artifact", name, "--name", name)
+	remaining = append(remaining, "-p", name)
 
 	err = utils.RunCommandInteractive(o.Interactive, o.WorkDir, cmd, remaining...)
 	if err != nil {
@@ -63,18 +63,18 @@ func (o *springTest) runningInThatDirectory(commandLine string) error {
 	return o.Errors.Error()
 }
 
-func (o *springTest) thereShouldBeAJenkinsProjectCreate() error {
+func (o *androidQuickstartTest) thereShouldBeAJenkinsProjectCreate() error {
 	fmt.Printf("TODO should be a jenkins project\n")
 	return nil
 }
 
-func (o *springTest) aRunningApplication() error {
+func (o *androidQuickstartTest) aRunningApplication() error {
 	fmt.Printf("TODO should be able to query this using 'jx get app (app name)'\n")
 	return nil
 }
 
-func (o *springTest) executingJxDeleteApp() error {
-	appName := tempDirPrefix + "spring-" + seed
+func (o *androidQuickstartTest) executingJxDeleteApp() error {
+	appName := tempDirPrefix + "android-quickstart-" + seed
 	cmd := "jx"
 	fullAppName := o.GetGitOrganisation() + "/" + appName
 	args := []string{"delete", "app", "-b", fullAppName}
@@ -85,8 +85,8 @@ func (o *springTest) executingJxDeleteApp() error {
 	return o.Errors.Error()
 }
 
-func (o *springTest) executingJxDeleteRepo() error {
-	appName := tempDirPrefix + "spring-" + seed
+func (o *androidQuickstartTest) executingJxDeleteRepo() error {
+	appName := tempDirPrefix + "android-quickstart-" + seed
 	cmd := "jx"
 	args := []string{"delete", "repo", "-b", "--github", "-o", o.GetGitOrganisation(), "-n", appName}
 	err := utils.RunCommandInteractive(o.Interactive, o.WorkDir, cmd, args...)
@@ -96,8 +96,8 @@ func (o *springTest) executingJxDeleteRepo() error {
 	return o.Errors.Error()
 }
 
-func SpringFeatureContext(s *godog.Suite) {
-	o := &springTest{
+func AndroidQuickstartFeatureContext(s *godog.Suite) {
+	o := &androidQuickstartTest{
 		Test: common.Test{
 			Factory:     cmdutil.NewFactory(),
 			Interactive: os.Getenv("JX_INTERACTIVE") == "true",

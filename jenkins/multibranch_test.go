@@ -2,9 +2,7 @@ package jenkins
 
 import (
 	"fmt"
-
 	"os"
-
 	"strings"
 
 	"github.com/DATA-DOG/godog"
