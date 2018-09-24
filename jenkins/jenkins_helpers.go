@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	maxWaitForBuildToStart     = 20 * time.Second
-	maxWaitForBuildToBeCreated = 50 * time.Second
+	maxWaitForBuildToStart     = 1 * time.Minute
+	maxWaitForBuildToBeCreated = 5 * time.Minute
 	maxWaitForBuildToComplete  = 200 * time.Minute
 )
 
@@ -114,7 +114,7 @@ func WaitForBuildToFinish(jenkins *gojenkins.Jenkins, job gojenkins.Job, buildNu
 		}
 	*/
 	fns := gojenkins.NewConditionFunc(fn, logFn)
-	err := gojenkins.Poll(1*time.Second, buildFinishWaitTime, fmt.Sprintf("job %s build #%d to finish", jobUrl, buildNumber), fns)
+	err := gojenkins.Poll(10*time.Second, buildFinishWaitTime, fmt.Sprintf("job %s build #%d to finish", jobUrl, buildNumber), fns)
 	if err == nil && result == nil {
 		return result, fmt.Errorf("No build found for job %s", jobUrl)
 	}
