@@ -57,13 +57,13 @@ bdd-all: *.go
 	$(GO) test $(PACKAGE_DIRS) -test.run TestMain  -test.v -godog.feature=.
 
 jx-spring: *.go
-	$(GO) test -test.v -test.run TestMain -godog.feature=spring.feature
+	$(GO) test -test.v -test.timeout=1h -test.run TestMain -godog.feature=spring.feature
 
 jx-import: *.go
-	$(GO) test -test.v -godog.feature=import.feature
+	$(GO) test -test.v -test.timeout=1h -godog.feature=import.feature
 
 jx-import-url: *.go
-	$(GO) test -test.v -godog.feature=importurl.feature
+	$(GO) test -test.v -test.timeout=1h -godog.feature=importurl.feature
 
 # FAILS
 jx-quickstart-android-quickstart: *.go
