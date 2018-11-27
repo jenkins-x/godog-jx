@@ -1,4 +1,8 @@
-# BDD tests for Jenkins X using Godog
+# Deprecated
+
+We have moved to using these BDD tests instead: https://github.com/jenkins-x/bdd-jx
+
+## BDD tests for Jenkins X using Godog
 
 This project contains the BDD tests for using Jenkins X with the [jx command line](https://github.com/jenkins-x/jx) 
 
